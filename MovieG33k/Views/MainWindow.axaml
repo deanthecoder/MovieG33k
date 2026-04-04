@@ -283,7 +283,7 @@
                 <StackPanel Spacing="12">
                   <TextBlock Classes="launcherEyebrow"
                              FontSize="12"
-                             Text="RATE AFTER WATCHING" />
+                             Text="RATING" />
                   <TextBlock IsVisible="{Binding HasSelectedPublicRating}"
                              Classes="launcherHint"
                              Text="{Binding SelectedPublicRatingLabel}" />
