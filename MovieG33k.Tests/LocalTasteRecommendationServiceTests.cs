@@ -114,6 +114,7 @@ public sealed class LocalTasteRecommendationServiceTests
         public string RegionCode => "GB";
         public Task<IReadOnlyList<CatalogTitle>> SearchAsync(DiscoveryQuery query, CancellationToken cancellationToken = default) => Task.FromResult(m_results);
         public Task<IReadOnlyList<CatalogTitle>> GetTrendingAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<CatalogTitle>>(m_results.Where(result => result.Kind == kind).Take(maxResults).ToArray());
+        public Task<IReadOnlyList<CatalogTitle>> GetDiscoverAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<CatalogTitle>>(m_results.Where(result => result.Kind == kind).Take(maxResults).ToArray());
         public Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default) => Task.FromResult(m_results.FirstOrDefault());
         public Task<CatalogTitle> ResolveImdbIdAsync(string imdbId, TitleKind kind, CancellationToken cancellationToken = default) => Task.FromResult(m_results.FirstOrDefault());
     }
