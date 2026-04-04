@@ -133,8 +133,6 @@ public sealed class MainWindowViewModelTests
 
         Assert.That(viewModel.SelectedResult, Is.SameAs(selectedResult));
         Assert.That(viewModel.SelectedResult.SourceLabel, Is.EqualTo("Search hit"));
-        Assert.That(viewModel.HasSelectedAgeRating, Is.True);
-        Assert.That(viewModel.SelectedAgeRatingLabel, Is.EqualTo("Age rating: R"));
     }
 
     [Test]

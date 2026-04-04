@@ -203,8 +203,6 @@ public sealed class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(SelectedRatingLabel));
         OnPropertyChanged(nameof(HasSelectedPublicRating));
         OnPropertyChanged(nameof(SelectedPublicRatingLabel));
-        OnPropertyChanged(nameof(HasSelectedAgeRating));
-        OnPropertyChanged(nameof(SelectedAgeRatingLabel));
         OnPropertyChanged(nameof(HasSelectedRuntime));
         OnPropertyChanged(nameof(SelectedRuntimeLabel));
         OnPropertyChanged(nameof(IsSelectedOnWatchlist));
@@ -341,13 +339,6 @@ public sealed class MainWindowViewModel : ViewModelBase
             ? string.Empty
             : $"TMDb community rating: {SelectedResult.Snapshot.Title.PublicRating / 2m:0.0}/5";
 
-    public bool HasSelectedAgeRating => !string.IsNullOrWhiteSpace(SelectedResult?.Snapshot.Title.AgeRating);
-
-    public string SelectedAgeRatingLabel =>
-        string.IsNullOrWhiteSpace(SelectedResult?.Snapshot.Title.AgeRating)
-            ? string.Empty
-            : $"Age rating: {SelectedResult.Snapshot.Title.AgeRating}";
-
     public bool HasSelectedRuntime => TryGetSelectedRuntimeMinutes(out _);
 
     public string SelectedRuntimeLabel =>
@@ -472,12 +463,12 @@ public sealed class MainWindowViewModel : ViewModelBase
         m_posterCancellationTokenSource?.Cancel();
         m_posterCancellationTokenSource = new CancellationTokenSource();
         var cancellationToken = m_posterCancellationTokenSource.Token;
-        await Dispatcher.UIThread.InvokeAsync(() => SelectedPoster = null);
 
         var posterUrl = SelectedResult?.PosterUrl;
         if (string.IsNullOrWhiteSpace(posterUrl))
         {
             Logger.Instance.Warn($"No poster path is available for '{SelectedTitle}'.");
+            await Dispatcher.UIThread.InvokeAsync(() => SelectedPoster = null);
             return;
         }
 
