@@ -132,6 +132,36 @@ public sealed class MainWindowViewModelTests
         Assert.That(viewModel.SelectedResult.SourceLabel, Is.EqualTo("Search hit"));
     }
 
+    [Test]
+    public async Task SelectedExternalLinkPrefersImdbWhenAvailable()
+    {
+        var title = new MovieEntry(
+            new TitleIdentifiers(5548, "tt0093870"),
+            "RoboCop",
+            "RoboCop",
+            "Short summary.",
+            new DateOnly(1987, 7, 17),
+            null,
+            null,
+            ["Action"],
+            "en");
+        var repository = new FakeLibraryRepository([
+            new LibraryItemSnapshot(title, SourceLabel: "Search hit")
+        ]);
+        var tmdbClient = new FakeTmdbMetadataClient([]);
+        var viewModel = new MainWindowViewModel(
+            new DiscoveryWorkspaceService(repository, tmdbClient),
+            new ImdbCsvImportService(tmdbClient),
+            new FakeDialogService());
+
+        await viewModel.RefreshAsync();
+        viewModel.SelectedResult = viewModel.Results[0];
+
+        Assert.That(viewModel.CanOpenSelectedExternalLink, Is.True);
+        Assert.That(viewModel.SelectedExternalLinkToolTip, Is.EqualTo("Open this title in IMDb"));
+        Assert.That(viewModel.OpenSelectedExternalLinkCommand.CanExecute(null), Is.True);
+    }
+
     private sealed class FakeLibraryRepository : ILibraryRepository
     {
         private readonly List<LibraryItemSnapshot> m_searchResults;

@@ -17,6 +17,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using DTC.Core;
 using DTC.Core.Commands;
+using DTC.Core.Extensions;
 using DTC.Core.UI;
 using DTC.Core.ViewModels;
 using Material.Icons;
@@ -48,6 +49,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly IImdbImportService m_imdbImportService;
     private readonly IDialogService m_dialogService;
     private readonly AsyncRelayCommand m_loadMoreResultsCommand;
+    private readonly RelayCommand m_openSelectedExternalLinkCommand;
     private readonly string m_regionCode;
     private string m_searchText;
     private DiscoveryKindOption m_selectedKind;
@@ -101,6 +103,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         ToggleWatchlistCommand = new AsyncRelayCommand(
             _ => ToggleWatchlistAsync(),
             onException: exception => m_dialogService.ShowMessage("Couldn't update watchlist", exception.Message));
+        m_openSelectedExternalLinkCommand = new RelayCommand(
+            _ => OpenSelectedExternalLink(),
+            _ => CanOpenSelectedExternalLink);
         m_loadMoreResultsCommand = new AsyncRelayCommand(
             _ => LoadMoreResultsAsync(),
             _ => CanLoadMore,
@@ -126,6 +131,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     public ICommand RateSelectedTitleCommand { get; }
 
     public ICommand ToggleWatchlistCommand { get; }
+
+    public ICommand OpenSelectedExternalLinkCommand => m_openSelectedExternalLinkCommand;
 
     public ICommand LoadMoreResultsCommand => m_loadMoreResultsCommand;
 
@@ -178,6 +185,9 @@ public sealed class MainWindowViewModel : ViewModelBase
             OnPropertyChanged(nameof(WatchlistButtonLabel));
             OnPropertyChanged(nameof(WatchlistButtonIcon));
             OnPropertyChanged(nameof(WatchlistButtonToolTip));
+            OnPropertyChanged(nameof(CanOpenSelectedExternalLink));
+            OnPropertyChanged(nameof(SelectedExternalLinkToolTip));
+            m_openSelectedExternalLinkCommand.RaiseCanExecuteChanged();
             OnPropertyChanged(nameof(Star1Glyph));
             OnPropertyChanged(nameof(Star2Glyph));
             OnPropertyChanged(nameof(Star3Glyph));
@@ -330,6 +340,15 @@ public sealed class MainWindowViewModel : ViewModelBase
         IsSelectedOnWatchlist
             ? "Remove this title from your pinned watchlist"
             : "Pin this title so you can come back to it later";
+
+    public bool CanOpenSelectedExternalLink => GetSelectedExternalUri() != null;
+
+    public string SelectedExternalLinkToolTip =>
+        SelectedResult?.Snapshot.Title.Identifiers.ImdbId is not null
+            ? "Open this title in IMDb"
+            : SelectedResult?.Snapshot.Title.Identifiers.TmdbId is not null
+                ? "Open this title in TMDb"
+                : "No external page is available for this title";
 
     public string Star1Glyph => GetStarGlyph(1);
 
@@ -565,6 +584,24 @@ public sealed class MainWindowViewModel : ViewModelBase
             : "Search hit";
     }
 
+    private Uri GetSelectedExternalUri()
+    {
+        var identifiers = SelectedResult?.Snapshot.Title.Identifiers;
+        if (identifiers == null)
+            return null;
+
+        if (!string.IsNullOrWhiteSpace(identifiers.ImdbId))
+            return new Uri($"https://www.imdb.com/title/{identifiers.ImdbId}/", UriKind.Absolute);
+
+        if (identifiers.TmdbId is int tmdbId)
+        {
+            var mediaPath = SelectedResult?.Snapshot.Title.Kind == TitleKind.TvShow ? "tv" : "movie";
+            return new Uri($"https://www.themoviedb.org/{mediaPath}/{tmdbId}", UriKind.Absolute);
+        }
+
+        return null;
+    }
+
     private bool TryGetSelectedRuntimeMinutes(out int runtimeMinutes)
     {
         if (SelectedResult?.Snapshot.Title is MovieEntry { RuntimeMinutes: > 0 } movieEntry)
@@ -608,6 +645,24 @@ public sealed class MainWindowViewModel : ViewModelBase
             !IsSelectedOnWatchlist);
 
         await RefreshResultsAsync();
+    }
+
+    private void OpenSelectedExternalLink()
+    {
+        var externalUri = GetSelectedExternalUri();
+        if (externalUri == null)
+            return;
+
+        try
+        {
+            Logger.Instance.Info($"Opening external link '{externalUri}'.");
+            externalUri.Open();
+        }
+        catch (Exception ex)
+        {
+            Logger.Instance.Exception($"Failed to open external link '{externalUri}'.", ex);
+            m_dialogService.ShowMessage("Couldn't open link", ex.Message);
+        }
     }
 
     private async Task ImportImdbRatingsAsync()

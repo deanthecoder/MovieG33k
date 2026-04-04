@@ -231,10 +231,27 @@
                     <TextBlock Classes="launcherEyebrow"
                                FontSize="12"
                                Text="MOVIE DETAILS" />
-                    <TextBlock Classes="launcherTitle"
-                               FontSize="30"
-                               Text="{Binding SelectedTitle}"
-                               TextWrapping="Wrap" />
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Classes="launcherTitle"
+                                 FontSize="30"
+                                 Text="{Binding SelectedTitle}"
+                                 TextWrapping="Wrap" />
+                      <Button Grid.Column="1"
+                              Classes="neon"
+                              Margin="10,0,0,0"
+                              Width="36"
+                              Height="36"
+                              Padding="0"
+                              HorizontalAlignment="Right"
+                              VerticalAlignment="Top"
+                              Command="{Binding OpenSelectedExternalLinkCommand}"
+                              IsVisible="{Binding CanOpenSelectedExternalLink}"
+                              ToolTip.Tip="{Binding SelectedExternalLinkToolTip}">
+                        <materialIcons:MaterialIcon Width="18"
+                                                    Height="18"
+                                                    Kind="OpenInNew" />
+                      </Button>
+                    </Grid>
                     <TextBlock Classes="launcherHint"
                                Text="{Binding SelectedSubtitle}" />
                     <TextBlock Classes="launcherHint"
