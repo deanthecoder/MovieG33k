@@ -51,6 +51,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly DiscoveryWorkspaceService m_discoveryWorkspaceService;
     private readonly IImdbImportService m_imdbImportService;
     private readonly IDialogService m_dialogService;
+    private readonly IPosterCache m_posterCache;
     private readonly AsyncRelayCommand m_loadMoreResultsCommand;
     private readonly RelayCommand m_openSelectedExternalLinkCommand;
     private readonly string m_regionCode;
@@ -75,11 +76,13 @@ public sealed class MainWindowViewModel : ViewModelBase
         DiscoveryWorkspaceService discoveryWorkspaceService,
         IImdbImportService imdbImportService,
         IDialogService dialogService,
+        IPosterCache posterCache = null,
         string regionCode = "GB")
     {
         m_discoveryWorkspaceService = discoveryWorkspaceService ?? throw new ArgumentNullException(nameof(discoveryWorkspaceService));
         m_imdbImportService = imdbImportService ?? throw new ArgumentNullException(nameof(imdbImportService));
         m_dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
+        m_posterCache = posterCache;
         m_regionCode = string.IsNullOrWhiteSpace(regionCode) ? "GB" : regionCode.Trim().ToUpperInvariant();
 
         KindOptions =
@@ -481,19 +484,27 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         try
         {
-            await using var networkStream = await OpenPosterStreamAsync(posterUrl, cancellationToken);
-            using var memoryStream = new MemoryStream();
-            await networkStream.CopyToAsync(memoryStream, cancellationToken);
-            if (cancellationToken.IsCancellationRequested)
-                return;
-
-            var posterBytes = memoryStream.ToArray();
-            await Dispatcher.UIThread.InvokeAsync(() =>
+            if (m_posterCache != null &&
+                Uri.TryCreate(posterUrl, UriKind.Absolute, out var posterUri) &&
+                !posterUri.IsFile)
             {
-                using var bitmapStream = new MemoryStream(posterBytes, writable: false);
-                var posterBitmap = new Bitmap(bitmapStream);
-                SelectedPoster = CreatePosterDisplayImage(posterBitmap);
-            });
+                var cachedPosterFile = await m_posterCache.GetOrAddAsync(
+                    posterUrl,
+                    loader: posterCacheCancellationToken => OpenPosterStreamAsync(posterUrl, posterCacheCancellationToken),
+                    cancellationToken);
+
+                if (cachedPosterFile == null || cancellationToken.IsCancellationRequested)
+                    return;
+
+                await using var cachedPosterStream = cachedPosterFile.OpenRead();
+                await Dispatcher.UIThread.InvokeAsync(() => SelectedPoster = new Bitmap(cachedPosterStream));
+            }
+            else
+            {
+                await using var networkStream = await OpenPosterStreamAsync(posterUrl, cancellationToken);
+                await Dispatcher.UIThread.InvokeAsync(() => SelectedPoster = new Bitmap(networkStream));
+            }
+
             Logger.Instance.Info($"Poster loaded for '{SelectedTitle}'.");
         }
         catch (OperationCanceledException)
@@ -598,38 +609,6 @@ public sealed class MainWindowViewModel : ViewModelBase
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
         client.DefaultRequestHeaders.UserAgent.ParseAdd("MovieG33k/1.0");
         return client;
-    }
-
-    private static IImage CreatePosterDisplayImage(Bitmap posterBitmap)
-    {
-        if (posterBitmap == null)
-            throw new ArgumentNullException(nameof(posterBitmap));
-
-        const double targetRatio = 148d / 222d;
-        var sourceWidth = posterBitmap.PixelSize.Width;
-        var sourceHeight = posterBitmap.PixelSize.Height;
-        var sourceRatio = sourceWidth / (double)sourceHeight;
-
-        PixelRect cropRect;
-        if (sourceRatio > targetRatio)
-        {
-            var cropWidth = Math.Min(sourceWidth, (int)Math.Round(sourceHeight * targetRatio, MidpointRounding.AwayFromZero));
-            cropWidth = Math.Max(1, cropWidth);
-            var cropX = Math.Max(0, (sourceWidth - cropWidth) / 2);
-            cropRect = new PixelRect(cropX, 0, cropWidth, sourceHeight);
-        }
-        else if (sourceRatio < targetRatio)
-        {
-            var cropHeight = Math.Min(sourceHeight, (int)Math.Round(sourceWidth / targetRatio, MidpointRounding.AwayFromZero));
-            cropHeight = Math.Max(1, cropHeight);
-            cropRect = new PixelRect(0, 0, sourceWidth, cropHeight);
-        }
-        else
-        {
-            cropRect = new PixelRect(0, 0, sourceWidth, sourceHeight);
-        }
-
-        return new CroppedBitmap(posterBitmap, cropRect);
     }
 
     private static string ResolveDisplaySourceLabel(LibraryItemSnapshot previousSnapshot, LibraryItemSnapshot refreshedSnapshot)
