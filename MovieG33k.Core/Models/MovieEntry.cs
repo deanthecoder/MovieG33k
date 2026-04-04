@@ -1,0 +1,44 @@
+// Code authored by Dean Edis (DeanTheCoder).
+// Anyone is free to copy, modify, use, compile, or distribute this software,
+// either in source code form or as a compiled binary, for any purpose.
+//
+// If you modify the code, please retain this copyright header,
+// and consider contributing back to the repository or letting us know
+// about your modifications. Your contributions are valued!
+//
+// THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND.
+
+using System.Collections.Generic;
+
+namespace MovieG33k.Core.Models;
+
+/// <summary>
+/// Represents a movie entry in the local catalog.
+/// </summary>
+/// <remarks>
+/// Keeping movies explicit from day one avoids TV-specific assumptions leaking into the data model.
+/// </remarks>
+public sealed record MovieEntry(
+    TitleIdentifiers Identifiers,
+    string Name,
+    string OriginalName,
+    string Overview,
+    DateOnly? ReleaseDate,
+    string PosterPath,
+    string BackdropPath,
+    IReadOnlyList<string> Genres,
+    string OriginalLanguage,
+    int? RuntimeMinutes = null,
+    decimal? PublicRating = null)
+    : CatalogTitle(
+        Identifiers,
+        TitleKind.Movie,
+        Name,
+        OriginalName,
+        Overview,
+        ReleaseDate,
+        PosterPath,
+        BackdropPath,
+        Genres,
+        OriginalLanguage,
+        PublicRating);

@@ -1,0 +1,318 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:dialogHostAvalonia="clr-namespace:DialogHostAvalonia;assembly=DialogHost.Avalonia"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        xmlns:viewModels="clr-namespace:MovieG33k.ViewModels"
+        mc:Ignorable="d"
+        x:Name="MainWindowRoot"
+        x:Class="MovieG33k.Views.MainWindow"
+        x:DataType="viewModels:MainWindowViewModel"
+        Width="1220"
+        Height="780"
+        MinWidth="1040"
+        MinHeight="700"
+        Icon="/Assets/app.ico"
+        Title="MovieG33k">
+  <Grid>
+    <Image Source="/Assets/main-window-bg.jpg"
+           Stretch="UniformToFill" />
+
+    <Border>
+      <Border.Background>
+        <LinearGradientBrush StartPoint="0,0"
+                             EndPoint="0,1">
+          <GradientStop Color="#A6040B14"
+                        Offset="0" />
+          <GradientStop Color="#74040A13"
+                        Offset="0.45" />
+          <GradientStop Color="#BA040A13"
+                        Offset="1" />
+        </LinearGradientBrush>
+      </Border.Background>
+    </Border>
+
+    <Border Background="#1800CFFF"
+            Height="260"
+            VerticalAlignment="Top"
+            Opacity="0.28" />
+
+    <dialogHostAvalonia:DialogHost OverlayBackground="#AA02070D">
+      <Grid Margin="28"
+            RowDefinitions="Auto,Auto,Auto,*">
+        <Grid ColumnDefinitions="*,Auto"
+              Margin="0,8,0,18">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="launcherEyebrow"
+                       Text="RATE WHAT YOU WATCH. FIND WHAT'S NEXT." />
+            <TextBlock Classes="launcherTitle"
+                       FontSize="40"
+                       Text="MovieG33k" />
+            <TextBlock Classes="launcherHint"
+                       FontSize="16"
+                       TextWrapping="Wrap">
+              <Run Text="Use MovieG33k to " />
+              <Run Text="rate watched films" Foreground="#7CEB8B" />
+              <Run Text=" and " />
+              <Run Text="pick something new" Foreground="#7CEB8B" />
+              <Run Text=" when you need tonight's next movie." />
+            </TextBlock>
+          </StackPanel>
+
+          <Button Grid.Column="1"
+                  x:Name="SettingsButton"
+                  Classes="neon"
+                  Width="42"
+                  Height="42"
+                  Padding="0"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Top"
+                  Click="OnSettingsButtonClick"
+                  ToolTip.Tip="Settings and library tools">
+            <materialIcons:MaterialIcon Width="20"
+                                        Height="20"
+                                        Kind="CogOutline" />
+            <Button.ContextMenu>
+              <ContextMenu PlacementTarget="{Binding #SettingsButton}">
+                <MenuItem Header="Import IMDb ratings"
+                          Command="{Binding ImportImdbRatingsCommand}" />
+                <MenuItem Header="Reset database"
+                          Command="{Binding ResetDatabaseCommand}" />
+              </ContextMenu>
+            </Button.ContextMenu>
+          </Button>
+        </Grid>
+
+        <Border Grid.Row="1"
+                Margin="0,0,0,14"
+                Classes="searchSurface">
+          <StackPanel Spacing="14">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="8">
+              <Button Content="Browse movies"
+                      Classes="neon"
+                      Padding="14,10"
+                      Command="{Binding ShowDiscoverCommand}"
+                      IsEnabled="{Binding !IsDiscoveryMode}" />
+              <Button Content="Pinned to watch"
+                      Classes="neon"
+                      Padding="14,10"
+                      Command="{Binding ShowWatchlistCommand}"
+                      IsEnabled="{Binding !IsWatchlistMode}" />
+              <Button Content="Watched and rated"
+                      Classes="neon"
+                      Padding="14,10"
+                      Command="{Binding ShowWatchedCommand}"
+                      IsEnabled="{Binding !IsWatchedMode}" />
+            </StackPanel>
+
+            <Grid ColumnDefinitions="Auto,*,Auto">
+              <ComboBox MinWidth="136"
+                        Margin="0,0,8,0"
+                        ItemsSource="{Binding KindOptions}"
+                        SelectedItem="{Binding SelectedKind, Mode=TwoWay}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="viewModels:DiscoveryKindOption">
+                    <TextBlock Text="{Binding DisplayName}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+
+              <TextBox Grid.Column="1"
+                       Classes="searchBox"
+                       Margin="0,0,8,0"
+                       Background="Transparent"
+                       BorderThickness="0"
+                       FontSize="24"
+                       Text="{Binding SearchText, Mode=TwoWay}"
+                       Watermark="{Binding SearchWatermark}" />
+
+              <ProgressBar Grid.Column="2"
+                           Width="72"
+                           Height="4"
+                           VerticalAlignment="Center"
+                           IsIndeterminate="True"
+                           IsVisible="{Binding IsBusy}"
+                           Foreground="#E6F5F5F5"
+                           Background="#33FFFFFF"
+                           ShowProgressText="False" />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Row="2"
+                    Margin="0,0,0,12"
+                    Spacing="4">
+          <TextBlock Classes="launcherEyebrow"
+                     FontSize="12"
+                     Text="{Binding ResultsHeading}" />
+          <TextBlock Classes="launcherHint"
+                     Text="{Binding StatusText}" />
+        </StackPanel>
+
+        <Grid Grid.Row="3"
+              ColumnDefinitions="0.9*,1.1*">
+          <Border Classes="resultsPanel">
+            <Grid RowDefinitions="*,Auto">
+              <ListBox Background="Transparent"
+                       BorderThickness="0"
+                       ItemsSource="{Binding Results}"
+                       SelectedItem="{Binding SelectedResult, Mode=TwoWay}">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="viewModels:LibraryItemSnapshotViewModel">
+                    <Grid ColumnDefinitions="*,Auto"
+                          Background="Transparent"
+                          Margin="2">
+                      <StackPanel Spacing="4">
+                        <TextBlock Classes="resultTitle"
+                                   Text="{Binding Title}" />
+                        <TextBlock Classes="resultSubtitle"
+                                   Text="{Binding Subtitle}" />
+                        <TextBlock Classes="launcherHint"
+                                   IsVisible="{Binding HasPersonalState}"
+                                   FontSize="12"
+                                   Text="{Binding PersonalState}" />
+                      </StackPanel>
+                      <Border Grid.Column="1"
+                              Margin="12,0,0,0"
+                              Padding="10,4"
+                              VerticalAlignment="Center"
+                              CornerRadius="999"
+                              Background="#2200E5FF"
+                              BorderBrush="#2A3A60"
+                              BorderThickness="1">
+                        <TextBlock Classes="resultPrefix"
+                                   Text="{Binding BadgeText}" />
+                      </Border>
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+
+              <Button Grid.Row="1"
+                      Margin="10,8,10,4"
+                      Classes="neon"
+                      HorizontalAlignment="Stretch"
+                      Content="Load more"
+                      Command="{Binding LoadMoreResultsCommand}"
+                      IsVisible="{Binding CanLoadMore}" />
+            </Grid>
+          </Border>
+
+          <ScrollViewer Grid.Column="1"
+                        Margin="18,0,0,0"
+                        VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="18">
+              <Border Classes="searchSurface">
+                <Grid ColumnDefinitions="Auto,*">
+                  <Border Width="148"
+                          Height="222"
+                          CornerRadius="16"
+                          Background="#101728"
+                          BorderBrush="#2A3A60"
+                          BorderThickness="1">
+                    <Grid>
+                      <Image Source="{Binding SelectedPoster}"
+                             Stretch="UniformToFill"
+                             IsVisible="{Binding HasSelectedPoster}" />
+                      <TextBlock HorizontalAlignment="Center"
+                                 VerticalAlignment="Center"
+                                 Classes="launcherHint"
+                                 IsVisible="{Binding !HasSelectedPoster}"
+                                 Text="Poster" />
+                    </Grid>
+                  </Border>
+
+                  <StackPanel Grid.Column="1"
+                              Margin="18,0,0,0"
+                              Spacing="8">
+                    <TextBlock Classes="launcherEyebrow"
+                               FontSize="12"
+                               Text="MOVIE DETAILS" />
+                    <TextBlock Classes="launcherTitle"
+                               FontSize="30"
+                               Text="{Binding SelectedTitle}"
+                               TextWrapping="Wrap" />
+                    <TextBlock Classes="launcherHint"
+                               Text="{Binding SelectedSubtitle}" />
+                    <Button Classes="neon"
+                            Padding="10,6"
+                            HorizontalAlignment="Left"
+                            Command="{Binding ToggleWatchlistCommand}"
+                            IsVisible="{Binding CanToggleWatchlist}"
+                            ToolTip.Tip="{Binding WatchlistButtonToolTip}">
+                      <StackPanel Orientation="Horizontal"
+                                  Spacing="8">
+                        <materialIcons:MaterialIcon Width="18"
+                                                    Height="18"
+                                                    Kind="{Binding WatchlistButtonIcon}" />
+                        <TextBlock VerticalAlignment="Center"
+                                   Text="{Binding WatchlistButtonLabel}" />
+                      </StackPanel>
+                    </Button>
+                    <TextBlock Margin="0,6,0,0"
+                               TextWrapping="Wrap"
+                               Text="{Binding SelectedOverview}" />
+                  </StackPanel>
+                </Grid>
+              </Border>
+
+              <Border Classes="searchSurface">
+                <StackPanel Spacing="12">
+                  <TextBlock Classes="launcherEyebrow"
+                             FontSize="12"
+                             Text="RATE AFTER WATCHING" />
+                  <TextBlock IsVisible="{Binding HasSelectedPublicRating}"
+                             Classes="launcherHint"
+                             Text="{Binding SelectedPublicRatingLabel}" />
+                  <TextBlock IsVisible="{Binding HasSelectedRating}"
+                             Text="{Binding SelectedRatingLabel}" />
+                  <StackPanel Orientation="Horizontal"
+                              Spacing="8">
+                    <Button MinWidth="44"
+                            Classes="starButton"
+                            Padding="0"
+                            FontSize="24"
+                            Content="{Binding Star1Glyph}"
+                            Command="{Binding RateSelectedTitleCommand}"
+                            CommandParameter="1" />
+                    <Button MinWidth="44"
+                            Classes="starButton"
+                            Padding="0"
+                            FontSize="24"
+                            Content="{Binding Star2Glyph}"
+                            Command="{Binding RateSelectedTitleCommand}"
+                            CommandParameter="2" />
+                    <Button MinWidth="44"
+                            Classes="starButton"
+                            Padding="0"
+                            FontSize="24"
+                            Content="{Binding Star3Glyph}"
+                            Command="{Binding RateSelectedTitleCommand}"
+                            CommandParameter="3" />
+                    <Button MinWidth="44"
+                            Classes="starButton"
+                            Padding="0"
+                            FontSize="24"
+                            Content="{Binding Star4Glyph}"
+                            Command="{Binding RateSelectedTitleCommand}"
+                            CommandParameter="4" />
+                    <Button MinWidth="44"
+                            Classes="starButton"
+                            Padding="0"
+                            FontSize="24"
+                            Content="{Binding Star5Glyph}"
+                            Command="{Binding RateSelectedTitleCommand}"
+                            CommandParameter="5" />
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </Grid>
+    </dialogHostAvalonia:DialogHost>
+  </Grid>
+</Window>

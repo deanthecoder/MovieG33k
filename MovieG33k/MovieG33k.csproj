@@ -1,0 +1,58 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <Nullable>disable</Nullable>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <AssemblyName>MovieG33k</AssemblyName>
+    <RootNamespace>MovieG33k</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <Version>1.0</Version>
+    <Authors>Dean Edis</Authors>
+    <Company>Dean Edis (DeanTheCoder)</Company>
+    <Copyright>Copyright (c) 2026 Dean Edis</Copyright>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.1.3" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.1.3" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.1.3" />
+    <PackageReference Include="Material.Icons.Avalonia" Version="2.2.0" />
+    <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.1.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DTC.Core\DTC.Core\DTC.Core.csproj" />
+    <ProjectReference Include="..\MovieG33k.Core\MovieG33k.Core.csproj" />
+    <ProjectReference Include="..\MovieG33k.Data\MovieG33k.Data.csproj" />
+    <ProjectReference Include="..\MovieG33k.Imdb\MovieG33k.Imdb.csproj" />
+    <ProjectReference Include="..\MovieG33k.Tmdb\MovieG33k.Tmdb.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Update="Views\App.axaml.cs">
+      <DependentUpon>App.axaml</DependentUpon>
+    </Compile>
+    <Compile Update="Views\MainWindow.axaml.cs">
+      <DependentUpon>MainWindow.axaml</DependentUpon>
+    </Compile>
+  </ItemGroup>
+</Project>

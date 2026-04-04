@@ -1,0 +1,14 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dialogHostAvalonia="clr-namespace:DialogHostAvalonia;assembly=DialogHost.Avalonia"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="MovieG33k.Views.App"
+             Name="MovieG33k"
+             RequestedThemeVariant="Dark">
+  <Application.Styles>
+    <materialIcons:MaterialIconStyles />
+    <FluentTheme />
+    <dialogHostAvalonia:DialogHostStyles />
+    <StyleInclude Source="avares://DTC.Core/Themes/SharedGlassTheme.axaml" />
+  </Application.Styles>
+</Application>
