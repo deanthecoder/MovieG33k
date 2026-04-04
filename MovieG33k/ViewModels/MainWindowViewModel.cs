@@ -487,7 +487,11 @@ public sealed class MainWindowViewModel : ViewModelBase
                 return;
 
             var detailedCatalogKey = CatalogTitleKey.Create(detailedSnapshot.Title.Kind, detailedSnapshot.Title.Identifiers);
-            var replacement = new LibraryItemSnapshotViewModel(detailedSnapshot);
+            var replacementSnapshot = detailedSnapshot with
+            {
+                SourceLabel = ResolveDisplaySourceLabel(selectedSnapshot, detailedSnapshot)
+            };
+            var replacement = new LibraryItemSnapshotViewModel(replacementSnapshot);
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 var existingIndex = Results
@@ -543,6 +547,22 @@ public sealed class MainWindowViewModel : ViewModelBase
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
         client.DefaultRequestHeaders.UserAgent.ParseAdd("MovieG33k/1.0");
         return client;
+    }
+
+    private static string ResolveDisplaySourceLabel(LibraryItemSnapshot previousSnapshot, LibraryItemSnapshot refreshedSnapshot)
+    {
+        if (!string.IsNullOrWhiteSpace(refreshedSnapshot?.SourceLabel) &&
+            !string.Equals(refreshedSnapshot.SourceLabel, "TMDb", StringComparison.OrdinalIgnoreCase))
+            return refreshedSnapshot.SourceLabel;
+
+        if (!string.IsNullOrWhiteSpace(previousSnapshot?.SourceLabel))
+            return previousSnapshot.SourceLabel;
+
+        return refreshedSnapshot?.Rating != null ||
+               refreshedSnapshot?.WatchState != null ||
+               refreshedSnapshot?.WatchlistEntry != null
+            ? "In your library"
+            : "Search hit";
     }
 
     private bool TryGetSelectedRuntimeMinutes(out int runtimeMinutes)

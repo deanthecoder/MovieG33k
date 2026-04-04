@@ -96,15 +96,86 @@ public sealed class MainWindowViewModelTests
         Assert.That(viewModel.CanLoadMore, Is.False);
     }
 
+    [Test]
+    public async Task SelectingATitleKeepsItsExistingDisplayLabelAfterDetailRefresh()
+    {
+        var initialTitle = new MovieEntry(
+            new TitleIdentifiers(5548, "tt0093870"),
+            "RoboCop",
+            "RoboCop",
+            "Short summary.",
+            new DateOnly(1987, 7, 17),
+            null,
+            null,
+            ["Action"],
+            "en");
+        var detailedTitle = initialTitle with
+        {
+            RuntimeMinutes = 102,
+            PosterPath = "/esmAU0fCO28FbS6bUBKLAzJrohZ.jpg"
+        };
+
+        var repository = new FakeLibraryRepository([
+            new LibraryItemSnapshot(initialTitle, SourceLabel: "Search hit")
+        ]);
+        var tmdbClient = new FakeTmdbMetadataClient([detailedTitle]);
+        var viewModel = new MainWindowViewModel(
+            new DiscoveryWorkspaceService(repository, tmdbClient),
+            new ImdbCsvImportService(tmdbClient),
+            new FakeDialogService());
+
+        await viewModel.RefreshAsync();
+        viewModel.SelectedResult = viewModel.Results[0];
+
+        await WaitForAsync(() => viewModel.HasSelectedRuntime);
+
+        Assert.That(viewModel.SelectedResult.SourceLabel, Is.EqualTo("Search hit"));
+    }
+
     private sealed class FakeLibraryRepository : ILibraryRepository
     {
-        private readonly IReadOnlyList<LibraryItemSnapshot> m_searchResults;
+        private readonly List<LibraryItemSnapshot> m_searchResults;
+        private readonly Dictionary<string, LibraryItemSnapshot> m_snapshotsByKey;
 
-        public FakeLibraryRepository(IReadOnlyList<LibraryItemSnapshot> searchResults) => m_searchResults = searchResults;
+        public FakeLibraryRepository(IReadOnlyList<LibraryItemSnapshot> searchResults)
+        {
+            m_searchResults = searchResults.ToList();
+            m_snapshotsByKey = m_searchResults.ToDictionary(
+                snapshot => CatalogTitleKey.Create(snapshot.Title.Kind, snapshot.Title.Identifiers),
+                snapshot => snapshot,
+                StringComparer.OrdinalIgnoreCase);
+        }
 
         public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-        public Task UpsertTitlesAsync(IReadOnlyList<CatalogTitle> titles, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task UpsertTitlesAsync(IReadOnlyList<CatalogTitle> titles, CancellationToken cancellationToken = default)
+        {
+            foreach (var title in titles)
+            {
+                var catalogKey = CatalogTitleKey.Create(title.Kind, title.Identifiers);
+                if (m_snapshotsByKey.TryGetValue(catalogKey, out var existingSnapshot))
+                {
+                    var updatedSnapshot = existingSnapshot with { Title = title };
+                    m_snapshotsByKey[catalogKey] = updatedSnapshot;
+
+                    var index = m_searchResults.FindIndex(snapshot =>
+                        string.Equals(
+                            CatalogTitleKey.Create(snapshot.Title.Kind, snapshot.Title.Identifiers),
+                            catalogKey,
+                            StringComparison.OrdinalIgnoreCase));
+                    if (index >= 0)
+                        m_searchResults[index] = updatedSnapshot;
+                }
+                else
+                {
+                    var newSnapshot = new LibraryItemSnapshot(title);
+                    m_snapshotsByKey[catalogKey] = newSnapshot;
+                    m_searchResults.Add(newSnapshot);
+                }
+            }
+
+            return Task.CompletedTask;
+        }
 
         public Task UpsertRatingAsync(UserRating rating, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
@@ -117,14 +188,11 @@ public sealed class MainWindowViewModelTests
         public Task UpsertProviderAvailabilityAsync(TitleIdentifiers identifiers, TitleKind kind, IReadOnlyList<ProviderAvailability> providerAvailabilities, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task<IReadOnlyList<LibraryItemSnapshot>> SearchLibraryAsync(string query, TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>(m_searchResults.Take(maxResults).ToArray());
+            Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>(m_searchResults.Where(snapshot => snapshot.Title.Kind == kind).Take(maxResults).ToArray());
 
         public Task<IReadOnlyDictionary<string, LibraryItemSnapshot>> GetByCatalogKeysAsync(IReadOnlyList<string> catalogKeys, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyDictionary<string, LibraryItemSnapshot>>(
-                m_searchResults
-                    .Select(snapshot => new KeyValuePair<string, LibraryItemSnapshot>(
-                        CatalogTitleKey.Create(snapshot.Title.Kind, snapshot.Title.Identifiers),
-                        snapshot))
+                m_snapshotsByKey
                     .Where(pair => catalogKeys.Contains(pair.Key, StringComparer.OrdinalIgnoreCase))
                     .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase));
 
@@ -135,6 +203,19 @@ public sealed class MainWindowViewModelTests
             Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>(m_searchResults.Take(maxResults).ToArray());
 
         public Task ResetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            if (condition())
+                return;
+
+            await Task.Delay(50);
+        }
+
+        Assert.Fail("Timed out waiting for the view model to refresh.");
     }
 
     private sealed class FakeTmdbMetadataClient : ITmdbMetadataClient
