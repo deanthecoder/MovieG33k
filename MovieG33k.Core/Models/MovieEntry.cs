@@ -29,7 +29,8 @@ public sealed record MovieEntry(
     IReadOnlyList<string> Genres,
     string OriginalLanguage,
     int? RuntimeMinutes = null,
-    decimal? PublicRating = null)
+    decimal? PublicRating = null,
+    string AgeRating = null)
     : CatalogTitle(
         Identifiers,
         TitleKind.Movie,
@@ -41,4 +42,5 @@ public sealed record MovieEntry(
         BackdropPath,
         Genres,
         OriginalLanguage,
-        PublicRating);
+        PublicRating,
+        AgeRating);

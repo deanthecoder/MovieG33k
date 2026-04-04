@@ -9,6 +9,7 @@
 // THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND.
 
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -165,37 +166,59 @@ public sealed class MainWindowViewModel : ViewModelBase
         get => m_selectedResult;
         set
         {
-            if (!SetField(ref m_selectedResult, value))
+            if (ReferenceEquals(m_selectedResult, value))
                 return;
 
-            OnPropertyChanged(nameof(SelectedTitle));
-            OnPropertyChanged(nameof(SelectedSubtitle));
-            OnPropertyChanged(nameof(SelectedOverview));
-            OnPropertyChanged(nameof(HasSelectedPoster));
-            OnPropertyChanged(nameof(SelectedPersonalState));
-            OnPropertyChanged(nameof(RecommendationSummary));
-            OnPropertyChanged(nameof(HasSelectedRating));
-            OnPropertyChanged(nameof(SelectedRatingLabel));
-            OnPropertyChanged(nameof(HasSelectedPublicRating));
-            OnPropertyChanged(nameof(SelectedPublicRatingLabel));
-            OnPropertyChanged(nameof(HasSelectedRuntime));
-            OnPropertyChanged(nameof(SelectedRuntimeLabel));
-            OnPropertyChanged(nameof(IsSelectedOnWatchlist));
-            OnPropertyChanged(nameof(CanToggleWatchlist));
-            OnPropertyChanged(nameof(WatchlistButtonLabel));
-            OnPropertyChanged(nameof(WatchlistButtonIcon));
-            OnPropertyChanged(nameof(WatchlistButtonToolTip));
-            OnPropertyChanged(nameof(CanOpenSelectedExternalLink));
-            OnPropertyChanged(nameof(SelectedExternalLinkToolTip));
+            if (m_selectedResult != null)
+                m_selectedResult.PropertyChanged -= OnSelectedResultPropertyChanged;
+
+            SetField(ref m_selectedResult, value);
+
+            if (m_selectedResult != null)
+                m_selectedResult.PropertyChanged += OnSelectedResultPropertyChanged;
+
+            RefreshSelectedPresentationState();
             m_openSelectedExternalLinkCommand.RaiseCanExecuteChanged();
-            OnPropertyChanged(nameof(Star1Glyph));
-            OnPropertyChanged(nameof(Star2Glyph));
-            OnPropertyChanged(nameof(Star3Glyph));
-            OnPropertyChanged(nameof(Star4Glyph));
-            OnPropertyChanged(nameof(Star5Glyph));
             _ = RefreshSelectedTitleDetailsAsync();
             _ = LoadSelectedPosterAsync();
         }
+    }
+
+    private void OnSelectedResultPropertyChanged(object sender, PropertyChangedEventArgs e)
+    {
+        if (!ReferenceEquals(sender, SelectedResult))
+            return;
+
+        RefreshSelectedPresentationState();
+    }
+
+    private void RefreshSelectedPresentationState()
+    {
+        OnPropertyChanged(nameof(SelectedTitle));
+        OnPropertyChanged(nameof(SelectedSubtitle));
+        OnPropertyChanged(nameof(SelectedOverview));
+        OnPropertyChanged(nameof(SelectedPersonalState));
+        OnPropertyChanged(nameof(RecommendationSummary));
+        OnPropertyChanged(nameof(HasSelectedRating));
+        OnPropertyChanged(nameof(SelectedRatingLabel));
+        OnPropertyChanged(nameof(HasSelectedPublicRating));
+        OnPropertyChanged(nameof(SelectedPublicRatingLabel));
+        OnPropertyChanged(nameof(HasSelectedAgeRating));
+        OnPropertyChanged(nameof(SelectedAgeRatingLabel));
+        OnPropertyChanged(nameof(HasSelectedRuntime));
+        OnPropertyChanged(nameof(SelectedRuntimeLabel));
+        OnPropertyChanged(nameof(IsSelectedOnWatchlist));
+        OnPropertyChanged(nameof(CanToggleWatchlist));
+        OnPropertyChanged(nameof(WatchlistButtonLabel));
+        OnPropertyChanged(nameof(WatchlistButtonIcon));
+        OnPropertyChanged(nameof(WatchlistButtonToolTip));
+        OnPropertyChanged(nameof(CanOpenSelectedExternalLink));
+        OnPropertyChanged(nameof(SelectedExternalLinkToolTip));
+        OnPropertyChanged(nameof(Star1Glyph));
+        OnPropertyChanged(nameof(Star2Glyph));
+        OnPropertyChanged(nameof(Star3Glyph));
+        OnPropertyChanged(nameof(Star4Glyph));
+        OnPropertyChanged(nameof(Star5Glyph));
     }
 
     public string StatusText
@@ -317,6 +340,13 @@ public sealed class MainWindowViewModel : ViewModelBase
         SelectedResult?.Snapshot.Title.PublicRating == null
             ? string.Empty
             : $"TMDb community rating: {SelectedResult.Snapshot.Title.PublicRating / 2m:0.0}/5";
+
+    public bool HasSelectedAgeRating => !string.IsNullOrWhiteSpace(SelectedResult?.Snapshot.Title.AgeRating);
+
+    public string SelectedAgeRatingLabel =>
+        string.IsNullOrWhiteSpace(SelectedResult?.Snapshot.Title.AgeRating)
+            ? string.Empty
+            : $"Age rating: {SelectedResult.Snapshot.Title.AgeRating}";
 
     public bool HasSelectedRuntime => TryGetSelectedRuntimeMinutes(out _);
 

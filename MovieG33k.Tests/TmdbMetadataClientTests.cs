@@ -101,6 +101,8 @@ public sealed class TmdbMetadataClientTests
         Assert.That(result, Is.TypeOf<MovieEntry>());
         Assert.That(((MovieEntry)result).RuntimeMinutes, Is.EqualTo(102));
         Assert.That(result.Genres, Does.Contain("Action"));
+        Assert.That(result.AgeRating, Is.EqualTo("R"));
+        Assert.That(handler.LastRequestUri, Does.Contain("append_to_response=release_dates"));
     }
 
     private sealed class CapturingMessageHandler : HttpMessageHandler
@@ -142,8 +144,13 @@ public sealed class TmdbMetadataClientTests
 
     private sealed class DetailsMessageHandler : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(
+        public string LastRequestUri { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            LastRequestUri = request.RequestUri?.ToString();
+
+            return Task.FromResult(
                 new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(
@@ -158,6 +165,16 @@ public sealed class TmdbMetadataClientTests
                           "original_language": "en",
                           "runtime": 102,
                           "vote_average": 7.4,
+                          "release_dates": {
+                            "results": [
+                              {
+                                "iso_3166_1": "GB",
+                                "release_dates": [
+                                  { "certification": "R" }
+                                ]
+                              }
+                            ]
+                          },
                           "genres": [
                             { "id": 28, "name": "Action" },
                             { "id": 878, "name": "Science Fiction" }
@@ -165,5 +182,6 @@ public sealed class TmdbMetadataClientTests
                         }
                         """)
                 });
+        }
     }
 }

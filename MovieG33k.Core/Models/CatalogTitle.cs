@@ -29,7 +29,8 @@ public abstract record CatalogTitle(
     string BackdropPath,
     IReadOnlyList<string> Genres,
     string OriginalLanguage,
-    decimal? PublicRating = null)
+    decimal? PublicRating = null,
+    string AgeRating = null)
 {
     /// <summary>
     /// Returns the release year when a release date is known.

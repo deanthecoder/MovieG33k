@@ -126,7 +126,8 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
         var path = kind == TitleKind.Movie ? $"/3/movie/{identifiers.TmdbId}" : $"/3/tv/{identifiers.TmdbId}";
         var requestUri = BuildRequestUri(path, new Dictionary<string, string>
         {
-            ["language"] = m_options.Language
+            ["language"] = m_options.Language,
+            ["append_to_response"] = kind == TitleKind.Movie ? "release_dates" : "content_ratings"
         });
         Logger.Instance.Info($"Loading TMDb details for {kind} id '{identifiers.TmdbId}'.");
 
@@ -138,7 +139,7 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
 
             var content = await response.Content.ReadAsStringAsync(cancellationToken);
             using var document = JsonDocument.Parse(content);
-            return MapTitle(document.RootElement, kind);
+            return MapTitle(document.RootElement, kind, m_options.RegionCode);
         }
         catch (OperationCanceledException)
         {
@@ -264,7 +265,7 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
         return request;
     }
 
-    private static CatalogTitle MapTitle(JsonElement element, TitleKind kind)
+    private static CatalogTitle MapTitle(JsonElement element, TitleKind kind, string regionCode = null)
     {
         var identifiers = new TitleIdentifiers(
             element.TryGetProperty("id", out var idElement) ? idElement.GetInt32() : null,
@@ -291,7 +292,8 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
                 genres,
                 element.TryGetProperty("original_language", out var languageElement) ? languageElement.GetString() : null,
                 TryGetRuntimeMinutes(element),
-                PublicRating: TryGetPublicRating(element));
+                PublicRating: TryGetPublicRating(element),
+                AgeRating: TryGetAgeRating(element, kind, regionCode));
         }
 
         return new TvShowEntry(
@@ -306,7 +308,66 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             element.TryGetProperty("original_language", out var tvLanguageElement) ? tvLanguageElement.GetString() : null,
             TryGetSeasonCount(element),
             TryGetEpisodeCount(element),
-            PublicRating: TryGetPublicRating(element));
+            PublicRating: TryGetPublicRating(element),
+            AgeRating: TryGetAgeRating(element, kind, regionCode));
+    }
+
+    private static string TryGetAgeRating(JsonElement element, TitleKind kind, string regionCode)
+    {
+        if (kind == TitleKind.Movie)
+        {
+            if (!element.TryGetProperty("release_dates", out var releaseDatesElement) ||
+                !releaseDatesElement.TryGetProperty("results", out var releaseResults) ||
+                releaseResults.ValueKind != JsonValueKind.Array)
+                return null;
+
+            string fallbackCertification = null;
+            foreach (var regionResult in releaseResults.EnumerateArray())
+            {
+                var isoCode = regionResult.TryGetProperty("iso_3166_1", out var isoElement) ? isoElement.GetString() : null;
+                if (!regionResult.TryGetProperty("release_dates", out var releasesElement) || releasesElement.ValueKind != JsonValueKind.Array)
+                    continue;
+
+                foreach (var release in releasesElement.EnumerateArray())
+                {
+                    var certification = release.TryGetProperty("certification", out var certElement) ? certElement.GetString() : null;
+                    if (!string.IsNullOrWhiteSpace(certification))
+                    {
+                        certification = certification.Trim();
+                        if (!string.IsNullOrWhiteSpace(regionCode) &&
+                            string.Equals(regionCode, isoCode, StringComparison.OrdinalIgnoreCase))
+                            return certification;
+
+                        fallbackCertification ??= certification;
+                    }
+                }
+            }
+
+            return fallbackCertification;
+        }
+
+        if (!element.TryGetProperty("content_ratings", out var contentRatingsElement) ||
+            !contentRatingsElement.TryGetProperty("results", out var contentRatingsResults) ||
+            contentRatingsResults.ValueKind != JsonValueKind.Array)
+            return null;
+
+        string fallbackRating = null;
+        foreach (var ratingResult in contentRatingsResults.EnumerateArray())
+        {
+            var isoCode = ratingResult.TryGetProperty("iso_3166_1", out var isoElement) ? isoElement.GetString() : null;
+            var rating = ratingResult.TryGetProperty("rating", out var ratingElement) ? ratingElement.GetString() : null;
+            if (!string.IsNullOrWhiteSpace(rating))
+            {
+                rating = rating.Trim();
+                if (!string.IsNullOrWhiteSpace(regionCode) &&
+                    string.Equals(regionCode, isoCode, StringComparison.OrdinalIgnoreCase))
+                    return rating;
+
+                fallbackRating ??= rating;
+            }
+        }
+
+        return fallbackRating;
     }
 
     private static decimal? TryGetPublicRating(JsonElement element)
@@ -377,17 +438,17 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             kind == TitleKind.Movie
                 ? new CatalogTitle[]
                 {
-                    new MovieEntry(new TitleIdentifiers(348, "tt0078748"), "Alien", "Alien", "The crew of a commercial spacecraft answers a distress signal and discovers a perfect organism stalking them in the dark.", new DateOnly(1979, 5, 25), "/vfrQk5IPloGg1v9Rzbh2Eg3VGyM.jpg", "/AmR3JG1VQVxU8TfAvljUhfSFUOx.jpg", ["Horror", "Science Fiction"], "en", 117, 8.2m),
-                    new MovieEntry(new TitleIdentifiers(679, "tt0090605"), "Aliens", "Aliens", "Ripley returns to face a colony overrun by the same terrifying species she barely survived the first time.", new DateOnly(1986, 7, 18), "/r1x5JGpyqZU8PYhbs4UcrO1Xb6x.jpg", "/d7px1FQxW4tngdACVRsCSaZq0Xl.jpg", ["Action", "Science Fiction"], "en", 137, 8.0m),
-                    new MovieEntry(new TitleIdentifiers(603692, "tt15398776"), "Oppenheimer", "Oppenheimer", "A theoretical physicist leads the Manhattan Project and grapples with its consequences.", new DateOnly(2023, 7, 21), "/8Gxv9qnaD6bZ3fW7KvxJ9jE4t4T.jpg", "/fm6KqXpk3M2HVveHwCrBSSBaO0V.jpg", ["Drama", "History"], "en", 181, 8.1m),
-                    new MovieEntry(new TitleIdentifiers(872585, "tt1517268"), "Barbie", "Barbie", "Barbie and Ken tumble out of a perfect plastic world into something messier and much more human.", new DateOnly(2023, 7, 21), "/iuFNMS8U5cb6xfzi51Dbkovj7vM.jpg", "/nHf61UzkfFno5X1ofIhugCPus2R.jpg", ["Comedy", "Fantasy"], "en", 114, 7.0m),
-                    new MovieEntry(new TitleIdentifiers(346698, "tt4154796"), "Avengers: Endgame", "Avengers: Endgame", "The remaining Avengers mount a last stand to undo the damage wrought by Thanos.", new DateOnly(2019, 4, 26), "/or06FN3Dka5tukK1e9sl16pB3iy.jpg", "/7RyHsO4yDXtBv1zUU3mTpHeQ0d5.jpg", ["Action", "Science Fiction"], "en", 181, 8.3m)
+                    new MovieEntry(new TitleIdentifiers(348, "tt0078748"), "Alien", "Alien", "The crew of a commercial spacecraft answers a distress signal and discovers a perfect organism stalking them in the dark.", new DateOnly(1979, 5, 25), "/vfrQk5IPloGg1v9Rzbh2Eg3VGyM.jpg", "/AmR3JG1VQVxU8TfAvljUhfSFUOx.jpg", ["Horror", "Science Fiction"], "en", 117, 8.2m, "R"),
+                    new MovieEntry(new TitleIdentifiers(679, "tt0090605"), "Aliens", "Aliens", "Ripley returns to face a colony overrun by the same terrifying species she barely survived the first time.", new DateOnly(1986, 7, 18), "/r1x5JGpyqZU8PYhbs4UcrO1Xb6x.jpg", "/d7px1FQxW4tngdACVRsCSaZq0Xl.jpg", ["Action", "Science Fiction"], "en", 137, 8.0m, "R"),
+                    new MovieEntry(new TitleIdentifiers(603692, "tt15398776"), "Oppenheimer", "Oppenheimer", "A theoretical physicist leads the Manhattan Project and grapples with its consequences.", new DateOnly(2023, 7, 21), "/8Gxv9qnaD6bZ3fW7KvxJ9jE4t4T.jpg", "/fm6KqXpk3M2HVveHwCrBSSBaO0V.jpg", ["Drama", "History"], "en", 181, 8.1m, "R"),
+                    new MovieEntry(new TitleIdentifiers(872585, "tt1517268"), "Barbie", "Barbie", "Barbie and Ken tumble out of a perfect plastic world into something messier and much more human.", new DateOnly(2023, 7, 21), "/iuFNMS8U5cb6xfzi51Dbkovj7vM.jpg", "/nHf61UzkfFno5X1ofIhugCPus2R.jpg", ["Comedy", "Fantasy"], "en", 114, 7.0m, "PG-13"),
+                    new MovieEntry(new TitleIdentifiers(346698, "tt4154796"), "Avengers: Endgame", "Avengers: Endgame", "The remaining Avengers mount a last stand to undo the damage wrought by Thanos.", new DateOnly(2019, 4, 26), "/or06FN3Dka5tukK1e9sl16pB3iy.jpg", "/7RyHsO4yDXtBv1zUU3mTpHeQ0d5.jpg", ["Action", "Science Fiction"], "en", 181, 8.3m, "PG-13")
                 }
                 : new CatalogTitle[]
                 {
-                    new TvShowEntry(new TitleIdentifiers(1396, "tt0903747"), "Breaking Bad", "Breaking Bad", "A chemistry teacher turned meth producer spirals into increasingly dangerous choices.", new DateOnly(2008, 1, 20), "/ztkUQFLlC19CCMYHW9o1zWhJRNq.jpg", "/tsRy63Mu5cu8etL1X7ZLyf7UP1M.jpg", ["Drama", "Crime"], "en", 5, 62, 8.9m),
-                    new TvShowEntry(new TitleIdentifiers(94997, "tt2861424"), "House of the Dragon", "House of the Dragon", "The Targaryen dynasty tears itself apart in a brutal struggle for succession.", new DateOnly(2022, 8, 21), "/z2yahl2uefxDCl0nogcRBstwruJ.jpg", "/etj8E2o0Bud0HkONVQPjyCkIvpv.jpg", ["Fantasy", "Drama"], "en", 2, 18, 8.4m),
-                    new TvShowEntry(new TitleIdentifiers(2316, "tt0411008"), "Lost", "Lost", "A plane crash strands survivors on an island that refuses to stay simple.", new DateOnly(2004, 9, 22), "/ogWw7A5XzeoT6kcK96mdNmQ4aiH.jpg", "/m8JTwHFwX7I7JY5fPe4SjqejWag.jpg", ["Adventure", "Mystery"], "en", 6, 121, 8.0m)
+                    new TvShowEntry(new TitleIdentifiers(1396, "tt0903747"), "Breaking Bad", "Breaking Bad", "A chemistry teacher turned meth producer spirals into increasingly dangerous choices.", new DateOnly(2008, 1, 20), "/ztkUQFLlC19CCMYHW9o1zWhJRNq.jpg", "/tsRy63Mu5cu8etL1X7ZLyf7UP1M.jpg", ["Drama", "Crime"], "en", 5, 62, 8.9m, "TV-MA"),
+                    new TvShowEntry(new TitleIdentifiers(94997, "tt2861424"), "House of the Dragon", "House of the Dragon", "The Targaryen dynasty tears itself apart in a brutal struggle for succession.", new DateOnly(2022, 8, 21), "/z2yahl2uefxDCl0nogcRBstwruJ.jpg", "/etj8E2o0Bud0HkONVQPjyCkIvpv.jpg", ["Fantasy", "Drama"], "en", 2, 18, 8.4m, "TV-MA"),
+                    new TvShowEntry(new TitleIdentifiers(2316, "tt0411008"), "Lost", "Lost", "A plane crash strands survivors on an island that refuses to stay simple.", new DateOnly(2004, 9, 22), "/ogWw7A5XzeoT6kcK96mdNmQ4aiH.jpg", "/m8JTwHFwX7I7JY5fPe4SjqejWag.jpg", ["Adventure", "Mystery"], "en", 6, 121, 8.0m, "TV-14")
                 };
 
         return items.Take(maxResults).ToArray();

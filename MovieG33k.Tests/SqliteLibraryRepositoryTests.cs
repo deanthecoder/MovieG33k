@@ -34,7 +34,8 @@ public sealed class SqliteLibraryRepositoryTests
                 null,
                 ["Comedy"],
                 "en",
-                PublicRating: 7.0m);
+                PublicRating: 7.0m,
+                AgeRating: "PG-13");
 
             await repository.UpsertTitlesAsync([title]);
             await repository.UpsertRatingAsync(new UserRating(title.Identifiers, TitleKind.Movie, 8, DateTimeOffset.UtcNow));
@@ -46,6 +47,7 @@ public sealed class SqliteLibraryRepositoryTests
             Assert.That(results, Has.Count.EqualTo(1));
             Assert.That(results[0].Title.Name, Is.EqualTo("Barbie"));
             Assert.That(results[0].Title.PublicRating, Is.EqualTo(7.0m));
+            Assert.That(results[0].Title.AgeRating, Is.EqualTo("PG-13"));
             Assert.That(results[0].Rating?.ScoreOutOfTen, Is.EqualTo(8));
             Assert.That(results[0].WatchState?.Status, Is.EqualTo(WatchStatus.Watched));
             Assert.That(results[0].WatchlistEntry, Is.Not.Null);

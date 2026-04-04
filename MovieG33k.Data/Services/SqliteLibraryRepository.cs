@@ -78,6 +78,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                 genres TEXT NULL,
                 original_language TEXT NULL,
                 public_rating REAL NULL,
+                age_rating TEXT NULL,
                 runtime_minutes INTEGER NULL,
                 season_count INTEGER NULL,
                 episode_count INTEGER NULL,
@@ -148,6 +149,16 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         {
         }
 
+        var ageRatingMigrationCommand = connection.CreateCommand();
+        ageRatingMigrationCommand.CommandText = "ALTER TABLE titles ADD COLUMN age_rating TEXT NULL;";
+        try
+        {
+            await ageRatingMigrationCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 1 && ex.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
+        {
+        }
+
         m_isInitialized = true;
         Logger.Instance.Info("MovieG33k SQLite database ready.");
     }
@@ -170,11 +181,11 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                 """
                 INSERT INTO titles (
                     catalog_key, kind, tmdb_id, imdb_id, name, original_name, overview,
-                    release_date, poster_path, backdrop_path, genres, original_language, public_rating,
+                    release_date, poster_path, backdrop_path, genres, original_language, public_rating, age_rating,
                     runtime_minutes, season_count, episode_count, updated_utc)
                 VALUES (
                     $catalogKey, $kind, $tmdbId, $imdbId, $name, $originalName, $overview,
-                    $releaseDate, $posterPath, $backdropPath, $genres, $originalLanguage, $publicRating,
+                    $releaseDate, $posterPath, $backdropPath, $genres, $originalLanguage, $publicRating, $ageRating,
                     $runtimeMinutes, $seasonCount, $episodeCount, $updatedUtc)
                 ON CONFLICT(catalog_key) DO UPDATE SET
                     tmdb_id = excluded.tmdb_id,
@@ -188,6 +199,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                     genres = excluded.genres,
                     original_language = excluded.original_language,
                     public_rating = excluded.public_rating,
+                    age_rating = excluded.age_rating,
                     runtime_minutes = excluded.runtime_minutes,
                     season_count = excluded.season_count,
                     episode_count = excluded.episode_count,
@@ -379,6 +391,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                 t.genres,
                 t.original_language,
                 t.public_rating,
+                t.age_rating,
                 t.runtime_minutes,
                 t.season_count,
                 t.episode_count,
@@ -466,6 +479,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                 t.genres,
                 t.original_language,
                 t.public_rating,
+                t.age_rating,
                 t.runtime_minutes,
                 t.season_count,
                 t.episode_count,
@@ -527,6 +541,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                 t.genres,
                 t.original_language,
                 t.public_rating,
+                t.age_rating,
                 t.runtime_minutes,
                 t.season_count,
                 t.episode_count,
@@ -608,6 +623,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                 t.genres,
                 t.original_language,
                 t.public_rating,
+                t.age_rating,
                 t.runtime_minutes,
                 t.season_count,
                 t.episode_count,
@@ -697,6 +713,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         command.Parameters.AddWithValue("$genres", title.Genres == null ? DBNull.Value : string.Join('|', title.Genres));
         command.Parameters.AddWithValue("$originalLanguage", (object)title.OriginalLanguage ?? DBNull.Value);
         command.Parameters.AddWithValue("$publicRating", title.PublicRating ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$ageRating", (object)title.AgeRating ?? DBNull.Value);
         command.Parameters.AddWithValue("$updatedUtc", DateTimeOffset.UtcNow.UtcDateTime.ToString("O", CultureInfo.InvariantCulture));
 
         if (title is MovieEntry movieEntry)
@@ -748,7 +765,8 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                     genres,
                     reader.IsDBNull(reader.GetOrdinal("original_language")) ? null : reader.GetString(reader.GetOrdinal("original_language")),
                     reader.IsDBNull(reader.GetOrdinal("runtime_minutes")) ? null : reader.GetInt32(reader.GetOrdinal("runtime_minutes")),
-                    reader.IsDBNull(reader.GetOrdinal("public_rating")) ? null : reader.GetDecimal(reader.GetOrdinal("public_rating")))
+                    reader.IsDBNull(reader.GetOrdinal("public_rating")) ? null : reader.GetDecimal(reader.GetOrdinal("public_rating")),
+                    reader.IsDBNull(reader.GetOrdinal("age_rating")) ? null : reader.GetString(reader.GetOrdinal("age_rating")))
                 : new TvShowEntry(
                     identifiers,
                     reader.GetString(reader.GetOrdinal("name")),
@@ -761,7 +779,8 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                     reader.IsDBNull(reader.GetOrdinal("original_language")) ? null : reader.GetString(reader.GetOrdinal("original_language")),
                     reader.IsDBNull(reader.GetOrdinal("season_count")) ? null : reader.GetInt32(reader.GetOrdinal("season_count")),
                     reader.IsDBNull(reader.GetOrdinal("episode_count")) ? null : reader.GetInt32(reader.GetOrdinal("episode_count")),
-                    reader.IsDBNull(reader.GetOrdinal("public_rating")) ? null : reader.GetDecimal(reader.GetOrdinal("public_rating")));
+                    reader.IsDBNull(reader.GetOrdinal("public_rating")) ? null : reader.GetDecimal(reader.GetOrdinal("public_rating")),
+                    reader.IsDBNull(reader.GetOrdinal("age_rating")) ? null : reader.GetString(reader.GetOrdinal("age_rating")));
 
         UserRating rating = null;
         if (!reader.IsDBNull(reader.GetOrdinal("score_out_of_ten")))

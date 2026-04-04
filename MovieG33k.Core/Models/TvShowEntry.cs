@@ -30,7 +30,8 @@ public sealed record TvShowEntry(
     string OriginalLanguage,
     int? SeasonCount = null,
     int? EpisodeCount = null,
-    decimal? PublicRating = null)
+    decimal? PublicRating = null,
+    string AgeRating = null)
     : CatalogTitle(
         Identifiers,
         TitleKind.TvShow,
@@ -42,4 +43,5 @@ public sealed record TvShowEntry(
         BackdropPath,
         Genres,
         OriginalLanguage,
-        PublicRating);
+        PublicRating,
+        AgeRating);

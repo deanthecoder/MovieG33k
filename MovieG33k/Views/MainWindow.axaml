@@ -257,6 +257,9 @@
                     <TextBlock Classes="launcherHint"
                                IsVisible="{Binding HasSelectedRuntime}"
                                Text="{Binding SelectedRuntimeLabel}" />
+                    <TextBlock Classes="launcherHint"
+                               IsVisible="{Binding HasSelectedAgeRating}"
+                               Text="{Binding SelectedAgeRatingLabel}" />
                     <Button Classes="neon"
                             Padding="10,6"
                             HorizontalAlignment="Left"

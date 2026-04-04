@@ -160,13 +160,20 @@ public sealed class LibraryItemSnapshotViewModel : ViewModelBase
     {
         var mediaLabel = snapshot.Title.Kind == TitleKind.Movie ? "Movie" : "TV";
         var yearText = snapshot.Title.ReleaseYear?.ToString() ?? "TBA";
+        var ageRatingText = string.IsNullOrWhiteSpace(snapshot.Title.AgeRating)
+            ? null
+            : snapshot.Title.AgeRating;
         var genreText = snapshot.Title.Genres?.Count > 0
             ? string.Join(" / ", snapshot.Title.Genres.Take(2))
             : null;
 
-        return string.IsNullOrWhiteSpace(genreText)
-            ? $"{mediaLabel} • {yearText}"
-            : $"{mediaLabel} • {yearText} • {genreText}";
+        return string.IsNullOrWhiteSpace(ageRatingText)
+            ? string.IsNullOrWhiteSpace(genreText)
+                ? $"{mediaLabel} • {yearText}"
+                : $"{mediaLabel} • {yearText} • {genreText}"
+            : string.IsNullOrWhiteSpace(genreText)
+                ? $"{mediaLabel} • {yearText} • {ageRatingText}"
+                : $"{mediaLabel} • {yearText} • {ageRatingText} • {genreText}";
     }
 
     private static string BuildPersonalState(LibraryItemSnapshot snapshot)

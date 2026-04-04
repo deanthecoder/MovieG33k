@@ -112,7 +112,8 @@ public sealed class MainWindowViewModelTests
         var detailedTitle = initialTitle with
         {
             RuntimeMinutes = 102,
-            PosterPath = "/esmAU0fCO28FbS6bUBKLAzJrohZ.jpg"
+            PosterPath = "/esmAU0fCO28FbS6bUBKLAzJrohZ.jpg",
+            AgeRating = "R"
         };
 
         var repository = new FakeLibraryRepository([
@@ -132,6 +133,8 @@ public sealed class MainWindowViewModelTests
 
         Assert.That(viewModel.SelectedResult, Is.SameAs(selectedResult));
         Assert.That(viewModel.SelectedResult.SourceLabel, Is.EqualTo("Search hit"));
+        Assert.That(viewModel.HasSelectedAgeRating, Is.True);
+        Assert.That(viewModel.SelectedAgeRatingLabel, Is.EqualTo("Age rating: R"));
     }
 
     [Test]
