@@ -14,6 +14,8 @@ using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Windows.Input;
+using Avalonia;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using DTC.Core;
@@ -60,7 +62,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private bool m_canLoadMore;
     private LibraryViewMode m_currentMode;
     private int m_resultLimit = InitialResultLimit;
-    private Bitmap m_selectedPoster;
+    private IImage m_selectedPoster;
     private CancellationTokenSource m_refreshCancellationTokenSource;
     private CancellationTokenSource m_posterCancellationTokenSource;
     private CancellationTokenSource m_selectedDetailsCancellationTokenSource;
@@ -295,13 +297,16 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public string SelectedOverview => SelectedResult?.Overview ?? "Movie details will appear here once you select a title.";
 
-    public Bitmap SelectedPoster
+    public IImage SelectedPoster
     {
         get => m_selectedPoster;
         private set
         {
+            var previousPoster = m_selectedPoster;
             if (!SetField(ref m_selectedPoster, value))
                 return;
+
+            (previousPoster as IDisposable)?.Dispose();
 
             OnPropertyChanged(nameof(HasSelectedPoster));
         }
@@ -486,7 +491,8 @@ public sealed class MainWindowViewModel : ViewModelBase
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 using var bitmapStream = new MemoryStream(posterBytes, writable: false);
-                SelectedPoster = new Bitmap(bitmapStream);
+                var posterBitmap = new Bitmap(bitmapStream);
+                SelectedPoster = CreatePosterDisplayImage(posterBitmap);
             });
             Logger.Instance.Info($"Poster loaded for '{SelectedTitle}'.");
         }
@@ -592,6 +598,38 @@ public sealed class MainWindowViewModel : ViewModelBase
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
         client.DefaultRequestHeaders.UserAgent.ParseAdd("MovieG33k/1.0");
         return client;
+    }
+
+    private static IImage CreatePosterDisplayImage(Bitmap posterBitmap)
+    {
+        if (posterBitmap == null)
+            throw new ArgumentNullException(nameof(posterBitmap));
+
+        const double targetRatio = 148d / 222d;
+        var sourceWidth = posterBitmap.PixelSize.Width;
+        var sourceHeight = posterBitmap.PixelSize.Height;
+        var sourceRatio = sourceWidth / (double)sourceHeight;
+
+        PixelRect cropRect;
+        if (sourceRatio > targetRatio)
+        {
+            var cropWidth = Math.Min(sourceWidth, (int)Math.Round(sourceHeight * targetRatio, MidpointRounding.AwayFromZero));
+            cropWidth = Math.Max(1, cropWidth);
+            var cropX = Math.Max(0, (sourceWidth - cropWidth) / 2);
+            cropRect = new PixelRect(cropX, 0, cropWidth, sourceHeight);
+        }
+        else if (sourceRatio < targetRatio)
+        {
+            var cropHeight = Math.Min(sourceHeight, (int)Math.Round(sourceWidth / targetRatio, MidpointRounding.AwayFromZero));
+            cropHeight = Math.Max(1, cropHeight);
+            cropRect = new PixelRect(0, 0, sourceWidth, cropHeight);
+        }
+        else
+        {
+            cropRect = new PixelRect(0, 0, sourceWidth, sourceHeight);
+        }
+
+        return new CroppedBitmap(posterBitmap, cropRect);
     }
 
     private static string ResolveDisplaySourceLabel(LibraryItemSnapshot previousSnapshot, LibraryItemSnapshot refreshedSnapshot)

@@ -212,10 +212,12 @@
                           CornerRadius="16"
                           Background="#101728"
                           BorderBrush="#2A3A60"
-                          BorderThickness="1">
+                          BorderThickness="1"
+                          VerticalAlignment="Top">
                     <Grid>
                       <Image Source="{Binding SelectedPoster}"
                              Stretch="UniformToFill"
+                             VerticalAlignment="Top"
                              IsVisible="{Binding HasSelectedPoster}" />
                       <TextBlock HorizontalAlignment="Center"
                                  VerticalAlignment="Center"
