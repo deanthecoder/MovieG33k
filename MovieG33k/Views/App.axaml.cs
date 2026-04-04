@@ -35,6 +35,9 @@ public class App : Application
 {
     private HttpClient m_httpClient;
 
+    public App() =>
+        DataContext = new AppViewModel();
+
     /// <inheritdoc />
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 

@@ -2,13 +2,21 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:dialogHostAvalonia="clr-namespace:DialogHostAvalonia;assembly=DialogHost.Avalonia"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:viewModels="clr-namespace:MovieG33k.ViewModels"
              x:Class="MovieG33k.Views.App"
              Name="MovieG33k"
-             RequestedThemeVariant="Dark">
+             RequestedThemeVariant="Dark"
+             x:DataType="viewModels:AppViewModel">
   <Application.Styles>
     <materialIcons:MaterialIconStyles />
     <FluentTheme />
     <dialogHostAvalonia:DialogHostStyles />
     <StyleInclude Source="avares://DTC.Core/Themes/SharedGlassTheme.axaml" />
   </Application.Styles>
+
+  <NativeMenu.Menu>
+    <NativeMenu>
+      <NativeMenuItem Header="About MovieG33k" Command="{CompiledBinding AboutCommand}" />
+    </NativeMenu>
+  </NativeMenu.Menu>
 </Application>
