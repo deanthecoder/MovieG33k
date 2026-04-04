@@ -49,6 +49,7 @@ public sealed class MainWindowViewModelTests
         var tmdbClient = new FakeTmdbMetadataClient([]);
         var viewModel = new MainWindowViewModel(
             new DiscoveryWorkspaceService(repository, tmdbClient),
+            new FakeRecommendationService([]),
             new ImdbCsvImportService(tmdbClient),
             new FakeDialogService());
 
@@ -82,6 +83,7 @@ public sealed class MainWindowViewModelTests
         var tmdbClient = new FakeTmdbMetadataClient([]);
         var viewModel = new MainWindowViewModel(
             new DiscoveryWorkspaceService(repository, tmdbClient),
+            new FakeRecommendationService([]),
             new ImdbCsvImportService(tmdbClient),
             new FakeDialogService());
 
@@ -122,6 +124,7 @@ public sealed class MainWindowViewModelTests
         var tmdbClient = new FakeTmdbMetadataClient([detailedTitle]);
         var viewModel = new MainWindowViewModel(
             new DiscoveryWorkspaceService(repository, tmdbClient),
+            new FakeRecommendationService([]),
             new ImdbCsvImportService(tmdbClient),
             new FakeDialogService());
 
@@ -154,6 +157,7 @@ public sealed class MainWindowViewModelTests
         var tmdbClient = new FakeTmdbMetadataClient([]);
         var viewModel = new MainWindowViewModel(
             new DiscoveryWorkspaceService(repository, tmdbClient),
+            new FakeRecommendationService([]),
             new ImdbCsvImportService(tmdbClient),
             new FakeDialogService());
 
@@ -185,6 +189,7 @@ public sealed class MainWindowViewModelTests
         var tmdbClient = new FakeTmdbMetadataClient([]);
         var viewModel = new MainWindowViewModel(
             new DiscoveryWorkspaceService(repository, tmdbClient),
+            new FakeRecommendationService([]),
             new ImdbCsvImportService(tmdbClient),
             new FakeDialogService());
 
@@ -196,6 +201,43 @@ public sealed class MainWindowViewModelTests
         Assert.That(viewModel.AverageRatingValue, Is.EqualTo("4.0/5"));
         Assert.That(viewModel.RatingDistribution.Any(item => item.Label == "5★" && item.ValueText == "1"), Is.True);
         Assert.That(viewModel.RatingByGenre.First().Label, Is.EqualTo("Science Fiction").Or.EqualTo("Action"));
+    }
+
+    [Test]
+    public async Task RecommendedModeShowsRecommendationSignals()
+    {
+        var title = new MovieEntry(
+            new TitleIdentifiers(348, "tt0078748"),
+            "Alien",
+            "Alien",
+            "A deep-space horror classic.",
+            new DateOnly(1979, 5, 25),
+            null,
+            null,
+            ["Science Fiction", "Horror"],
+            "en",
+            117,
+            8.5m);
+        var recommendation = new RecommendationCandidate(
+            title,
+            12.3d,
+            "Science Fiction • 1970s • Highly rated",
+            ["Science Fiction", "1970s", "Highly rated"]);
+        var repository = new FakeLibraryRepository([]);
+        var tmdbClient = new FakeTmdbMetadataClient([]);
+        var viewModel = new MainWindowViewModel(
+            new DiscoveryWorkspaceService(repository, tmdbClient),
+            new FakeRecommendationService([recommendation]),
+            new ImdbCsvImportService(tmdbClient),
+            new FakeDialogService());
+
+        viewModel.ShowRecommendedCommand.Execute(null);
+        await viewModel.RefreshAsync();
+
+        Assert.That(viewModel.IsRecommendedMode, Is.True);
+        Assert.That(viewModel.Results, Has.Count.EqualTo(1));
+        Assert.That(viewModel.Results[0].PersonalState, Is.EqualTo("Science Fiction • 1970s • Highly rated"));
+        Assert.That(viewModel.SelectedTitle, Is.EqualTo("Alien"));
     }
 
     private sealed class FakeLibraryRepository : ILibraryRepository
@@ -317,6 +359,16 @@ public sealed class MainWindowViewModelTests
 
         public Task<CatalogTitle> ResolveImdbIdAsync(string imdbId, TitleKind kind, CancellationToken cancellationToken = default) =>
             Task.FromResult(m_results.FirstOrDefault());
+    }
+
+    private sealed class FakeRecommendationService : IRecommendationService
+    {
+        private readonly IReadOnlyList<RecommendationCandidate> m_results;
+
+        public FakeRecommendationService(IReadOnlyList<RecommendationCandidate> results) => m_results = results;
+
+        public Task<IReadOnlyList<RecommendationCandidate>> GetRecommendationsAsync(DiscoveryQuery query, CancellationToken cancellationToken = default) =>
+            Task.FromResult(m_results);
     }
 
     private sealed class FakeDialogService : DTC.Core.UI.IDialogService

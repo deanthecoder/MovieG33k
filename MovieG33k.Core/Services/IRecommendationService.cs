@@ -24,7 +24,6 @@ public interface IRecommendationService
     /// Produces recommendation candidates for the supplied media type.
     /// </summary>
     Task<IReadOnlyList<RecommendationCandidate>> GetRecommendationsAsync(
-        TitleKind kind,
-        string regionCode,
+        DiscoveryQuery query,
         CancellationToken cancellationToken = default);
 }

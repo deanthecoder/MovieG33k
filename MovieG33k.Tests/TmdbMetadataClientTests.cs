@@ -127,6 +127,24 @@ public sealed class TmdbMetadataClientTests
         Assert.That(handler.RequestUris[1], Does.Contain("/3/movie/5548"));
     }
 
+    [Test]
+    public async Task GetTrendingAsyncRequestsMultiplePagesWhenMoreResultsAreNeeded()
+    {
+        var handler = new PagedTrendingMessageHandler();
+        var client = new TmdbMetadataClient(new HttpClient(handler), new TmdbOptions
+        {
+            AccessToken = "private-access-token",
+            RegionCode = "GB"
+        });
+
+        var results = await client.GetTrendingAsync(TitleKind.Movie, 35);
+
+        Assert.That(results, Has.Count.EqualTo(35));
+        Assert.That(handler.RequestUris, Has.Count.EqualTo(2));
+        Assert.That(handler.RequestUris[0], Does.Contain("page=1"));
+        Assert.That(handler.RequestUris[1], Does.Contain("page=2"));
+    }
+
     private sealed class CapturingMessageHandler : HttpMessageHandler
     {
         public string LastAuthorizationScheme { get; private set; }
@@ -271,6 +289,47 @@ public sealed class TmdbMetadataClientTests
                           ]
                         }
                         """)
+                });
+        }
+    }
+
+    private sealed class PagedTrendingMessageHandler : HttpMessageHandler
+    {
+        public List<string> RequestUris { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var requestUri = request.RequestUri?.ToString() ?? string.Empty;
+            RequestUris.Add(requestUri);
+
+            var page = requestUri.Contains("page=2", StringComparison.Ordinal) ? 2 : 1;
+            var startId = page == 1 ? 1 : 21;
+            var results = Enumerable.Range(startId, 20)
+                .Select(index =>
+                    $$"""
+                      {
+                        "id": {{index}},
+                        "title": "Movie {{index}}",
+                        "original_title": "Movie {{index}}",
+                        "overview": "Overview {{index}}",
+                        "release_date": "1987-07-17",
+                        "poster_path": "/poster-{{index}}.jpg",
+                        "original_language": "en",
+                        "vote_average": 7.0
+                      }
+                      """);
+
+            return Task.FromResult(
+                new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        $$"""
+                          {
+                            "results": [
+                              {{string.Join("," + Environment.NewLine, results)}}
+                            ]
+                          }
+                          """)
                 });
         }
     }

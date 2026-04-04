@@ -17,6 +17,11 @@ Search for something new, see the details, and decide whether to pin it for late
 
 ![Browse movies screenshot](img/browse-movies.png)
 
+### Recommended
+Get a first-pass list of films picked from your ratings history, with quick reason tags to explain the match.
+
+![Recommended movies screenshot](img/recommended-movies.png)
+
 ### Insights
 See how your ratings stack up with totals, averages, decade trends, and genre breakdowns.
 
@@ -34,6 +39,7 @@ Review the films you have already seen and keep your ratings in one place.
 
 ## What you can do today
 - Browse and search movies and TV shows from TMDb.
+- Get recommendation picks based on your rated history.
 - Give watched titles a simple 0-5 star rating.
 - See your rating insights with charts for distribution, decades, and genres.
 - Keep a pinned watchlist for titles you want to come back to.
@@ -71,11 +77,12 @@ MovieG33k is already useful as a first-pass personal movie tracker, but it is st
 The current focus is:
 - browsing and rating titles comfortably
 - turning your ratings into useful personal insights
+- surfacing recommendations from the library you have already built
 - keeping watched and pinned lists tidy
 - building a good local source of truth for your movie history
 
 Planned later work includes:
-- better recommendation logic
+- richer recommendation filters and tuning
 - richer editing and review flows
 - streaming provider availability by region
 

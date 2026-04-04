@@ -34,12 +34,22 @@ public sealed class LibraryItemSnapshotViewModel : ViewModelBase
     private bool m_hasPersonalState;
     private string m_providerText;
     private string m_posterUrl;
+    private readonly string m_personalStateOverride;
+    private readonly string m_badgeTextOverride;
+    private readonly string m_subtitleOverride;
 
     /// <summary>
     /// Creates a new row view model.
     /// </summary>
-    public LibraryItemSnapshotViewModel(LibraryItemSnapshot snapshot)
+    public LibraryItemSnapshotViewModel(
+        LibraryItemSnapshot snapshot,
+        string subtitleOverride = null,
+        string personalStateOverride = null,
+        string badgeTextOverride = null)
     {
+        m_subtitleOverride = subtitleOverride;
+        m_personalStateOverride = personalStateOverride;
+        m_badgeTextOverride = badgeTextOverride;
         UpdateFromSnapshot(snapshot);
     }
 
@@ -152,20 +162,22 @@ public sealed class LibraryItemSnapshotViewModel : ViewModelBase
 
         Snapshot = snapshot;
         Title = snapshot.Title.Name ?? "Untitled";
-        Subtitle = BuildSubtitle(snapshot);
+        Subtitle = m_subtitleOverride ?? BuildSubtitle(snapshot);
         SourceLabel = snapshot.SourceLabel ?? "TMDb";
-        BadgeText = BuildBadgeText(snapshot);
+        BadgeText = m_badgeTextOverride ?? BuildBadgeText(snapshot);
         HasBadgeText = !string.IsNullOrWhiteSpace(BadgeText);
         Overview = string.IsNullOrWhiteSpace(snapshot.Title.Overview)
             ? "Overview not fetched yet."
             : snapshot.Title.Overview;
-        PersonalState = BuildPersonalState(snapshot);
+        PersonalState = m_personalStateOverride ?? BuildPersonalState(snapshot);
         HasPersonalState = !string.IsNullOrWhiteSpace(PersonalState);
         ProviderText = snapshot.ProviderAvailabilities?.Count > 0
             ? string.Join(", ", snapshot.ProviderAvailabilities.Select(provider => provider.Provider.Name))
             : "Streaming availability will show up here when provider support is added.";
         PosterUrl = BuildPosterUrl(snapshot.Title.PosterPath);
     }
+
+    public static string BuildStableSubtitle(LibraryItemSnapshot snapshot) => BuildSubtitle(snapshot);
 
     private static string BuildSubtitle(LibraryItemSnapshot snapshot)
     {

@@ -38,6 +38,7 @@ public sealed class ReadmeScreenshotTests
             ImageDirectory.Create();
 
             await CaptureBrowseScreenshotAsync();
+            await CaptureRecommendedScreenshotAsync();
             await CaptureInsightsScreenshotAsync();
             await CaptureWatchlistScreenshotAsync();
             await CaptureWatchedScreenshotAsync();
@@ -110,6 +111,28 @@ public sealed class ReadmeScreenshotTests
         }
     }
 
+    private static async Task CaptureRecommendedScreenshotAsync()
+    {
+        var sampleData = CreateSampleData();
+        var viewModel = CreateViewModel(sampleData);
+        var window = CreateWindow(viewModel);
+
+        window.Show();
+
+        try
+        {
+            viewModel.ShowRecommendedCommand.Execute(null);
+            await viewModel.RefreshAsync();
+            viewModel.SelectedResult = viewModel.Results.First(item => item.Title == "RoboCop");
+            await WaitForSelectedPosterAsync(viewModel);
+            SaveScreenshot(window, "recommended-movies.png");
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     private static async Task CaptureWatchedScreenshotAsync()
     {
         var sampleData = CreateSampleData();
@@ -138,6 +161,11 @@ public sealed class ReadmeScreenshotTests
         var tmdbClient = new ScreenshotTmdbMetadataClient(sampleData.Browse.Select(snapshot => snapshot.Title).ToArray());
         return new MainWindowViewModel(
             new DiscoveryWorkspaceService(repository, tmdbClient),
+            new ScreenshotRecommendationService(sampleData.Recommended.Select(snapshot => new RecommendationCandidate(
+                snapshot.Title,
+                10,
+                "Recommended",
+                snapshot.Title.Genres?.Take(2).ToArray() ?? Array.Empty<string>())).ToArray()),
             new ImdbCsvImportService(tmdbClient),
             new ScreenshotDialogService());
     }
@@ -202,6 +230,11 @@ public sealed class ReadmeScreenshotTests
             new LibraryItemSnapshot(hackers, WatchlistEntry: new WatchlistEntry(hackers.Identifiers, TitleKind.Movie, DateTimeOffset.UtcNow.AddDays(-2), 1), SourceLabel: "Pinned"),
             new LibraryItemSnapshot(navigator, new UserRating(navigator.Identifiers, TitleKind.Movie, 8, DateTimeOffset.UtcNow.AddDays(-5)), new WatchState(navigator.Identifiers, TitleKind.Movie, WatchStatus.Watched, DateTimeOffset.UtcNow.AddDays(-5)), SourceLabel: "In your library")
         };
+        var recommended = new[]
+        {
+            new LibraryItemSnapshot(robocop, SourceLabel: "Recommended"),
+            new LibraryItemSnapshot(hackers, SourceLabel: "Recommended")
+        };
         var watchlist = new[]
         {
             new LibraryItemSnapshot(hackers, WatchlistEntry: new WatchlistEntry(hackers.Identifiers, TitleKind.Movie, DateTimeOffset.UtcNow.AddDays(-2), 2), SourceLabel: "Pinned"),
@@ -213,7 +246,7 @@ public sealed class ReadmeScreenshotTests
             new LibraryItemSnapshot(robocop, new UserRating(robocop.Identifiers, TitleKind.Movie, 10, DateTimeOffset.UtcNow.AddDays(-14)), new WatchState(robocop.Identifiers, TitleKind.Movie, WatchStatus.Watched, DateTimeOffset.UtcNow.AddDays(-14)), SourceLabel: "In your library")
         };
 
-        return new SampleData(browse, watchlist, watched);
+        return new SampleData(browse, recommended, watchlist, watched);
     }
 
     private static void SaveScreenshot(Window window, string fileName)
@@ -266,11 +299,13 @@ public sealed class ReadmeScreenshotTests
 
     private sealed record SampleData(
         IReadOnlyList<LibraryItemSnapshot> Browse,
+        IReadOnlyList<LibraryItemSnapshot> Recommended,
         IReadOnlyList<LibraryItemSnapshot> Watchlist,
         IReadOnlyList<LibraryItemSnapshot> Watched)
     {
         public IReadOnlyDictionary<string, LibraryItemSnapshot> ByCatalogKey =>
             Browse
+                .Concat(Recommended)
                 .Concat(Watchlist)
                 .Concat(Watched)
                 .GroupBy(snapshot => CatalogTitleKey.Create(snapshot.Title.Kind, snapshot.Title.Identifiers), StringComparer.OrdinalIgnoreCase)
@@ -379,6 +414,27 @@ public sealed class ReadmeScreenshotTests
             Task.FromResult(m_titles.FirstOrDefault(title =>
                 title.Kind == kind &&
                 string.Equals(title.Identifiers.ImdbId, imdbId, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private sealed class ScreenshotRecommendationService : IRecommendationService
+    {
+        private readonly IReadOnlyList<RecommendationCandidate> m_results;
+
+        public ScreenshotRecommendationService(IReadOnlyList<RecommendationCandidate> results) => m_results = results;
+
+        public Task<IReadOnlyList<RecommendationCandidate>> GetRecommendationsAsync(DiscoveryQuery query, CancellationToken cancellationToken = default)
+        {
+            IEnumerable<RecommendationCandidate> filtered = m_results.Where(result => result.Title.Kind == query.Kind);
+
+            if (!string.IsNullOrWhiteSpace(query.Query))
+            {
+                filtered = filtered.Where(result =>
+                    result.Title.Name.Contains(query.Query, StringComparison.OrdinalIgnoreCase) ||
+                    result.Title.Genres?.Any(genre => genre.Contains(query.Query, StringComparison.OrdinalIgnoreCase)) == true);
+            }
+
+            return Task.FromResult<IReadOnlyList<RecommendationCandidate>>(filtered.Take(query.MaxResults).ToArray());
+        }
     }
 
     private sealed class ScreenshotDialogService : DTC.Core.UI.IDialogService

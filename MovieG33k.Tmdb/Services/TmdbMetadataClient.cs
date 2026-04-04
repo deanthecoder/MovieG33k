@@ -91,12 +91,15 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
         Logger.Instance.Info($"Loading TMDb trending {kind} titles (max {maxResults}).");
 
         var mediaPath = kind == TitleKind.Movie ? "movie" : "tv";
-        var requestUri = BuildRequestUri($"/3/trending/{mediaPath}/day", new Dictionary<string, string>
-        {
-            ["language"] = m_options.Language
-        });
-
-        var results = await SendAndMapAsync(requestUri, kind, maxResults, cancellationToken);
+        var results = await SendAndMapPagedAsync(
+            $"/3/trending/{mediaPath}/day",
+            kind,
+            maxResults,
+            new Dictionary<string, string>
+            {
+                ["language"] = m_options.Language
+            },
+            cancellationToken);
         if (results != null)
             return results;
 
@@ -258,6 +261,52 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             Logger.Instance.Warn($"TMDb request '{requestUri}' failed.");
             return null;
         }
+    }
+
+    private async Task<IReadOnlyList<CatalogTitle>> SendAndMapPagedAsync(
+        string path,
+        TitleKind kind,
+        int maxResults,
+        IReadOnlyDictionary<string, string> queryParameters,
+        CancellationToken cancellationToken)
+    {
+        var collectedResults = new List<CatalogTitle>(Math.Max(0, maxResults));
+        var seenCatalogKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var page = 1;
+
+        while (collectedResults.Count < maxResults)
+        {
+            var parameters = new Dictionary<string, string>(queryParameters ?? new Dictionary<string, string>())
+            {
+                ["page"] = page.ToString(CultureInfo.InvariantCulture)
+            };
+            var requestUri = BuildRequestUri(path, parameters);
+            var pageResults = await SendAndMapAsync(requestUri, kind, maxResults, cancellationToken);
+            if (pageResults == null)
+                return null;
+
+            if (pageResults.Count == 0)
+                break;
+
+            foreach (var title in pageResults)
+            {
+                var catalogKey = CatalogTitleKey.Create(title.Kind, title.Identifiers);
+                if (!seenCatalogKeys.Add(catalogKey))
+                    continue;
+
+                collectedResults.Add(title);
+                if (collectedResults.Count >= maxResults)
+                    break;
+            }
+
+            if (pageResults.Count < 20)
+                break;
+
+            page++;
+        }
+
+        Logger.Instance.Info($"TMDb paged request for {kind} gathered {collectedResults.Count} results.");
+        return collectedResults;
     }
 
     private string BuildRequestUri(string path, IReadOnlyDictionary<string, string> values)

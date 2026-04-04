@@ -83,4 +83,39 @@ public sealed class LibraryItemSnapshotViewModelTests
         Assert.That(viewModel.HasBadgeText, Is.False);
         Assert.That(viewModel.BadgeText, Is.Null.Or.Empty);
     }
+
+    [Test]
+    public void RecommendationRowsKeepTheirOriginalSubtitleWhenDetailsAreRefreshed()
+    {
+        var initialTitle = new MovieEntry(
+            new TitleIdentifiers(348, "tt0078748"),
+            "Alien",
+            "Alien",
+            "A deep-space horror classic.",
+            new DateOnly(1979, 5, 25),
+            null,
+            null,
+            ["Science Fiction", "Horror"],
+            "en",
+            117,
+            8.5m);
+        var detailedTitle = initialTitle with
+        {
+            AgeRating = "18"
+        };
+
+        var initialSnapshot = new LibraryItemSnapshot(initialTitle, SourceLabel: "Recommended");
+        var viewModel = new LibraryItemSnapshotViewModel(
+            initialSnapshot,
+            LibraryItemSnapshotViewModel.BuildStableSubtitle(initialSnapshot),
+            "Science Fiction • 1970s • Highly rated",
+            "Top pick");
+
+        var originalSubtitle = viewModel.Subtitle;
+
+        viewModel.UpdateFromSnapshot(new LibraryItemSnapshot(detailedTitle, SourceLabel: "Recommended"));
+
+        Assert.That(viewModel.Subtitle, Is.EqualTo(originalSubtitle));
+        Assert.That(viewModel.Snapshot.Title.AgeRating, Is.EqualTo("18"));
+    }
 }

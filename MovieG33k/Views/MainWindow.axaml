@@ -145,6 +145,17 @@
                         Width="42"
                         Height="42"
                         Padding="0"
+                        Command="{Binding ShowRecommendedCommand}"
+                        IsEnabled="{Binding !IsRecommendedMode}"
+                        ToolTip.Tip="Recommended">
+                  <materialIcons:MaterialIcon Width="20"
+                                              Height="20"
+                                              Kind="LightbulbOutline" />
+                </Button>
+                <Button Classes="neon"
+                        Width="42"
+                        Height="42"
+                        Padding="0"
                         Command="{Binding ShowWatchlistCommand}"
                         IsEnabled="{Binding !IsWatchlistMode}"
                         ToolTip.Tip="Pinned to watch">
@@ -295,6 +306,14 @@
                     </Grid>
                     <TextBlock Classes="launcherHint"
                                Text="{Binding SelectedSubtitle}" />
+                    <StackPanel Spacing="4"
+                                IsVisible="{Binding HasSelectedRecommendationSignals}">
+                      <TextBlock Classes="launcherEyebrow"
+                                 FontSize="12"
+                                 Text="WHY IT FITS" />
+                      <TextBlock Classes="launcherHint"
+                                 Text="{Binding SelectedPersonalState}" />
+                    </StackPanel>
                     <TextBlock Classes="launcherHint"
                                IsVisible="{Binding HasSelectedRuntime}"
                                Text="{Binding SelectedRuntimeLabel}" />

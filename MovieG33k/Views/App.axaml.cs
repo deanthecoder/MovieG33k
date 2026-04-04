@@ -64,12 +64,14 @@ public class App : Application
             var repository = new SqliteLibraryRepository();
             var tmdbClient = new TmdbMetadataClient(m_httpClient, tmdbOptions);
             var discoveryWorkspaceService = new DiscoveryWorkspaceService(repository, tmdbClient);
+            var recommendationService = new LocalTasteRecommendationService(repository, tmdbClient);
             var imdbImportService = new ImdbCsvImportService(tmdbClient);
             var posterCache = new MoviePosterCache();
             Logger.Instance.Info("Poster cache enabled with a 50 MB budget.");
 
             var viewModel = new MainWindowViewModel(
                 discoveryWorkspaceService,
+                recommendationService,
                 imdbImportService,
                 DialogService.Instance,
                 posterCache,

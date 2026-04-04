@@ -43,6 +43,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private enum LibraryViewMode
     {
         Discover,
+        Recommended,
         Watchlist,
         Watched,
         Insights
@@ -50,6 +51,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private static readonly HttpClient PosterHttpClient = CreatePosterHttpClient();
     private readonly DiscoveryWorkspaceService m_discoveryWorkspaceService;
+    private readonly IRecommendationService m_recommendationService;
     private readonly IImdbImportService m_imdbImportService;
     private readonly IDialogService m_dialogService;
     private readonly IPosterCache m_posterCache;
@@ -76,12 +78,14 @@ public sealed class MainWindowViewModel : ViewModelBase
     /// </summary>
     public MainWindowViewModel(
         DiscoveryWorkspaceService discoveryWorkspaceService,
+        IRecommendationService recommendationService,
         IImdbImportService imdbImportService,
         IDialogService dialogService,
         IPosterCache posterCache = null,
         string regionCode = "GB")
     {
         m_discoveryWorkspaceService = discoveryWorkspaceService ?? throw new ArgumentNullException(nameof(discoveryWorkspaceService));
+        m_recommendationService = recommendationService ?? throw new ArgumentNullException(nameof(recommendationService));
         m_imdbImportService = imdbImportService ?? throw new ArgumentNullException(nameof(imdbImportService));
         m_dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         m_posterCache = posterCache;
@@ -100,6 +104,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         RatingByGenre = new ObservableCollection<InsightsBarViewModel>();
 
         ShowDiscoverCommand = new RelayCommand(_ => CurrentMode = LibraryViewMode.Discover);
+        ShowRecommendedCommand = new RelayCommand(_ => CurrentMode = LibraryViewMode.Recommended);
         ShowWatchlistCommand = new RelayCommand(_ => CurrentMode = LibraryViewMode.Watchlist);
         ShowWatchedCommand = new RelayCommand(_ => CurrentMode = LibraryViewMode.Watched);
         ShowInsightsCommand = new RelayCommand(_ => CurrentMode = LibraryViewMode.Insights);
@@ -131,6 +136,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     public ObservableCollection<LibraryItemSnapshotViewModel> Results { get; }
 
     public ICommand ShowDiscoverCommand { get; }
+
+    public ICommand ShowRecommendedCommand { get; }
 
     public ICommand ShowWatchlistCommand { get; }
 
@@ -217,6 +224,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(SelectedSubtitle));
         OnPropertyChanged(nameof(SelectedOverview));
         OnPropertyChanged(nameof(SelectedPersonalState));
+        OnPropertyChanged(nameof(HasSelectedRecommendationSignals));
         OnPropertyChanged(nameof(RecommendationSummary));
         OnPropertyChanged(nameof(HasSelectedRating));
         OnPropertyChanged(nameof(SelectedRatingLabel));
@@ -274,6 +282,8 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public bool IsDiscoveryMode => CurrentMode == LibraryViewMode.Discover;
 
+    public bool IsRecommendedMode => CurrentMode == LibraryViewMode.Recommended;
+
     public bool IsWatchlistMode => CurrentMode == LibraryViewMode.Watchlist;
 
     public bool IsWatchedMode => CurrentMode == LibraryViewMode.Watched;
@@ -289,6 +299,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 return;
 
             OnPropertyChanged(nameof(IsDiscoveryMode));
+            OnPropertyChanged(nameof(IsRecommendedMode));
             OnPropertyChanged(nameof(IsWatchlistMode));
             OnPropertyChanged(nameof(IsWatchedMode));
             OnPropertyChanged(nameof(IsInsightsMode));
@@ -302,6 +313,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         CurrentMode switch
         {
             LibraryViewMode.Insights => "Insights are built from the titles you've rated.",
+            LibraryViewMode.Recommended => "Filter recommendations by title or genre...",
             LibraryViewMode.Watched => "Filter your watched titles by title...",
             LibraryViewMode.Watchlist => "Filter the films and shows you've pinned for later...",
             _ => "Search for something to watch or rate..."
@@ -311,6 +323,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         CurrentMode switch
         {
             LibraryViewMode.Insights => "INSIGHTS",
+            LibraryViewMode.Recommended => "RECOMMENDED",
             LibraryViewMode.Watched => "WATCHED AND RATED",
             LibraryViewMode.Watchlist => "PINNED TO WATCH",
             _ => "BROWSE MOVIES"
@@ -319,9 +332,12 @@ public sealed class MainWindowViewModel : ViewModelBase
     public string SelectedTitle => SelectedResult?.Title ?? "Select a movie";
 
     public string SelectedSubtitle =>
-        SelectedResult?.Subtitle ??
+        SelectedResult?.Snapshot != null
+            ? LibraryItemSnapshotViewModel.BuildStableSubtitle(SelectedResult.Snapshot)
+            :
         CurrentMode switch
         {
+            LibraryViewMode.Recommended => "Pick a recommendation and see why it floated to the top.",
             LibraryViewMode.Watched => "Your watched-title details will appear here.",
             LibraryViewMode.Watchlist => "Pinned titles you want to come back to will appear here.",
             _ => "Search for something specific or browse popular picks."
@@ -350,13 +366,19 @@ public sealed class MainWindowViewModel : ViewModelBase
         SelectedResult?.PersonalState ??
         CurrentMode switch
         {
+            LibraryViewMode.Recommended => "Your top genres and decades shape these picks.",
             LibraryViewMode.Watchlist => "Pin anything that looks interesting so you can come back to it later.",
             _ => "Give a movie 0 to 5 stars after you've watched it, and MovieG33k will treat that as part of your watched history."
         };
 
+    public bool HasSelectedRecommendationSignals =>
+        IsRecommendedMode &&
+        !string.IsNullOrWhiteSpace(SelectedResult?.PersonalState);
+
     public string RecommendationSummary =>
         CurrentMode switch
         {
+            LibraryViewMode.Recommended => "Recommendation signals are pulled from your ratings history and lightly balanced with TMDb scores.",
             LibraryViewMode.Watched => "Your watched history and ratings will help MovieG33k learn what tends to work for you.",
             LibraryViewMode.Watchlist => "Pin likely candidates here first, then rate the ones you actually watch.",
             _ => "Search for something new, then pin or rate anything you want to keep."
@@ -414,7 +436,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public bool CanToggleWatchlist => SelectedResult?.Snapshot.Rating == null;
 
-    public string WatchlistButtonLabel => IsSelectedOnWatchlist ? "Pinned" : "Pin to watch";
+    public string WatchlistButtonLabel => IsSelectedOnWatchlist ? "Pinned" : "Add to watchlist";
 
     public MaterialIconKind WatchlistButtonIcon =>
         IsSelectedOnWatchlist
@@ -423,8 +445,8 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public string WatchlistButtonToolTip =>
         IsSelectedOnWatchlist
-            ? "Remove this title from your pinned watchlist"
-            : "Pin this title so you can come back to it later";
+            ? "Remove this title from your watchlist"
+            : "Add this title to your watchlist so you can come back to it later";
 
     public bool CanOpenSelectedExternalLink => GetSelectedExternalUri() != null;
 
@@ -469,6 +491,12 @@ public sealed class MainWindowViewModel : ViewModelBase
                 return;
             }
 
+            if (CurrentMode == LibraryViewMode.Recommended)
+            {
+                await RefreshRecommendationsAsync(cancellationToken);
+                return;
+            }
+
             var query = new DiscoveryQuery(SearchText, SelectedKind.Kind, m_regionCode, m_resultLimit);
             var result =
                 CurrentMode switch
@@ -510,6 +538,33 @@ public sealed class MainWindowViewModel : ViewModelBase
             if (!cancellationToken.IsCancellationRequested)
                 IsBusy = false;
         }
+    }
+
+    private async Task RefreshRecommendationsAsync(CancellationToken cancellationToken)
+    {
+        var query = new DiscoveryQuery(SearchText, SelectedKind.Kind, m_regionCode, m_resultLimit);
+        var candidates = await m_recommendationService.GetRecommendationsAsync(query, cancellationToken);
+        if (cancellationToken.IsCancellationRequested)
+            return;
+
+        Results.Clear();
+        SelectedResult = null;
+        CanLoadMore = candidates.Count >= m_resultLimit;
+        m_enrichedDetailKeys.Clear();
+        foreach (var candidate in candidates)
+            Results.Add(CreateRecommendationRow(candidate));
+
+        var mediaType = query.Kind == TitleKind.Movie ? "movies" : "TV shows";
+        StatusText =
+            candidates.Count == 0
+                ? string.IsNullOrWhiteSpace(query.Query)
+                    ? $"No {mediaType} to recommend yet. Rate more titles to build your taste profile."
+                    : $"No recommended {mediaType} matched \"{query.Query}\"."
+                : string.IsNullOrWhiteSpace(query.Query)
+                    ? $"Recommended {mediaType} based on your ratings."
+                    : $"Recommended {mediaType} matching \"{query.Query}\".";
+
+        SelectedResult = Results.FirstOrDefault();
     }
 
     private async Task RefreshInsightsAsync(CancellationToken cancellationToken)
@@ -571,6 +626,17 @@ public sealed class MainWindowViewModel : ViewModelBase
                 Percent = maxValue <= 0 ? 0 : item.Percent / maxValue * 100d
             });
         }
+    }
+
+    private static LibraryItemSnapshotViewModel CreateRecommendationRow(RecommendationCandidate candidate)
+    {
+        var snapshot = new LibraryItemSnapshot(candidate.Title, SourceLabel: "Recommended");
+        var badgeText = candidate.Score >= 10d ? "Top pick" : null;
+        var personalState = candidate.Signals?.Count > 0
+            ? string.Join(" • ", candidate.Signals)
+            : candidate.Rationale;
+        var subtitle = LibraryItemSnapshotViewModel.BuildStableSubtitle(snapshot);
+        return new LibraryItemSnapshotViewModel(snapshot, subtitle, personalState, badgeText);
     }
 
     private void ResetResultLimitAndRefresh()
