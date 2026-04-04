@@ -60,6 +60,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     private Bitmap m_selectedPoster;
     private CancellationTokenSource m_refreshCancellationTokenSource;
     private CancellationTokenSource m_posterCancellationTokenSource;
+    private CancellationTokenSource m_selectedDetailsCancellationTokenSource;
+    private readonly HashSet<string> m_enrichedDetailKeys = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Creates a new main window view model.
@@ -181,6 +183,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             OnPropertyChanged(nameof(Star3Glyph));
             OnPropertyChanged(nameof(Star4Glyph));
             OnPropertyChanged(nameof(Star5Glyph));
+            _ = RefreshSelectedTitleDetailsAsync();
             _ = LoadSelectedPosterAsync();
         }
     }
@@ -369,6 +372,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 return;
 
             Results.Clear();
+            m_enrichedDetailKeys.Clear();
             foreach (var item in result.Items)
                 Results.Add(new LibraryItemSnapshotViewModel(item));
 
@@ -423,7 +427,12 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         var posterUrl = SelectedResult?.PosterUrl;
         if (string.IsNullOrWhiteSpace(posterUrl))
+        {
+            Logger.Instance.Warn($"No poster path is available for '{SelectedTitle}'.");
             return;
+        }
+
+        Logger.Instance.Info($"Loading poster for '{SelectedTitle}' from '{posterUrl}'.");
 
         try
         {
@@ -439,13 +448,69 @@ public sealed class MainWindowViewModel : ViewModelBase
                 using var bitmapStream = new MemoryStream(posterBytes, writable: false);
                 SelectedPoster = new Bitmap(bitmapStream);
             });
+            Logger.Instance.Info($"Poster loaded for '{SelectedTitle}'.");
         }
         catch (OperationCanceledException)
         {
         }
-        catch
+        catch (Exception ex)
         {
             await Dispatcher.UIThread.InvokeAsync(() => SelectedPoster = null);
+            Logger.Instance.Exception($"Failed to load poster for '{SelectedTitle}' from '{posterUrl}'.", ex);
+        }
+    }
+
+    private async Task RefreshSelectedTitleDetailsAsync()
+    {
+        m_selectedDetailsCancellationTokenSource?.Cancel();
+        m_selectedDetailsCancellationTokenSource = new CancellationTokenSource();
+        var cancellationToken = m_selectedDetailsCancellationTokenSource.Token;
+        var selectedSnapshot = SelectedResult?.Snapshot;
+        if (selectedSnapshot == null)
+            return;
+
+        var shouldRefreshDetails =
+            selectedSnapshot.Title is MovieEntry { RuntimeMinutes: null or <= 0 } ||
+            string.IsNullOrWhiteSpace(selectedSnapshot.Title.PosterPath);
+        if (!shouldRefreshDetails)
+            return;
+
+        var catalogKey = CatalogTitleKey.Create(selectedSnapshot.Title.Kind, selectedSnapshot.Title.Identifiers);
+        if (!m_enrichedDetailKeys.Add(catalogKey))
+            return;
+
+        try
+        {
+            Logger.Instance.Info($"Requesting richer details for '{selectedSnapshot.Title.Name}'.");
+            var detailedSnapshot = await m_discoveryWorkspaceService.GetTitleDetailsAsync(selectedSnapshot.Title, cancellationToken);
+            if (cancellationToken.IsCancellationRequested || detailedSnapshot == null)
+                return;
+
+            var detailedCatalogKey = CatalogTitleKey.Create(detailedSnapshot.Title.Kind, detailedSnapshot.Title.Identifiers);
+            var replacement = new LibraryItemSnapshotViewModel(detailedSnapshot);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                var existingIndex = Results
+                    .Select((item, index) => new { item, index })
+                    .FirstOrDefault(entry =>
+                        string.Equals(
+                            CatalogTitleKey.Create(entry.item.Snapshot.Title.Kind, entry.item.Snapshot.Title.Identifiers),
+                            detailedCatalogKey,
+                            StringComparison.OrdinalIgnoreCase))
+                    ?.index;
+                if (existingIndex.HasValue)
+                    Results[existingIndex.Value] = replacement;
+
+                SelectedResult = replacement;
+            });
+            Logger.Instance.Info($"Updated cached details for '{detailedSnapshot.Title.Name}'.");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Logger.Instance.Exception($"Failed to refresh detailed metadata for '{selectedSnapshot.Title.Name}'.", ex);
         }
     }
 
@@ -460,7 +525,16 @@ public sealed class MainWindowViewModel : ViewModelBase
         if (Uri.TryCreate(posterUrl, UriKind.Absolute, out var posterUri) && posterUri.IsFile)
             return File.OpenRead(posterUri.LocalPath);
 
-        return await PosterHttpClient.GetStreamAsync(posterUrl, cancellationToken);
+        using var response = await PosterHttpClient.GetAsync(posterUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if ((int)response.StatusCode == 429)
+            Logger.Instance.Warn($"TMDb image request returned HTTP 429 for '{posterUrl}'.");
+
+        response.EnsureSuccessStatusCode();
+        await using var networkStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var memoryStream = new MemoryStream();
+        await networkStream.CopyToAsync(memoryStream, cancellationToken);
+        memoryStream.Position = 0;
+        return memoryStream;
     }
 
     private static HttpClient CreatePosterHttpClient()

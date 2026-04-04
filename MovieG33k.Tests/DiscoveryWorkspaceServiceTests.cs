@@ -151,6 +151,47 @@ public sealed class DiscoveryWorkspaceServiceTests
     }
 
     [Test]
+    public async Task GetTitleDetailsAsyncReturnsRicherMovieMetadata()
+    {
+        var initialTitle = new MovieEntry(
+            new TitleIdentifiers(5548, "tt0093870"),
+            "RoboCop",
+            "RoboCop",
+            "Short summary.",
+            new DateOnly(1987, 7, 17),
+            "/poster.jpg",
+            null,
+            ["Action"],
+            "en");
+        var detailedTitle = initialTitle with
+        {
+            RuntimeMinutes = 102,
+            Overview = "A fuller TMDb summary."
+        };
+        var repository = new FakeLibraryRepository(
+            [],
+            snapshotsByKey: new Dictionary<string, LibraryItemSnapshot>(StringComparer.OrdinalIgnoreCase)
+            {
+                [CatalogTitleKey.Create(detailedTitle.Kind, detailedTitle.Identifiers)] = new(
+                    detailedTitle,
+                    new UserRating(detailedTitle.Identifiers, TitleKind.Movie, 8, DateTimeOffset.UtcNow),
+                    new WatchState(detailedTitle.Identifiers, TitleKind.Movie, WatchStatus.Watched, DateTimeOffset.UtcNow),
+                    SourceLabel: "In your library")
+            });
+        var tmdbClient = new FakeTmdbMetadataClient([], detailsByKey: new Dictionary<string, CatalogTitle>(StringComparer.OrdinalIgnoreCase)
+        {
+            [CatalogTitleKey.Create(initialTitle.Kind, initialTitle.Identifiers)] = detailedTitle
+        });
+        var service = new DiscoveryWorkspaceService(repository, tmdbClient);
+
+        var result = await service.GetTitleDetailsAsync(initialTitle);
+
+        Assert.That(result.Title, Is.TypeOf<MovieEntry>());
+        Assert.That(((MovieEntry)result.Title).RuntimeMinutes, Is.EqualTo(102));
+        Assert.That(result.Rating?.ScoreOutOfTen, Is.EqualTo(8));
+    }
+
+    [Test]
     public async Task SaveRatingAsyncRemovesTheTitleFromTheWatchlist()
     {
         var title = new MovieEntry(
@@ -239,8 +280,13 @@ public sealed class DiscoveryWorkspaceServiceTests
     private sealed class FakeTmdbMetadataClient : ITmdbMetadataClient
     {
         private readonly IReadOnlyList<CatalogTitle> m_results;
+        private readonly IReadOnlyDictionary<string, CatalogTitle> m_detailsByKey;
 
-        public FakeTmdbMetadataClient(IReadOnlyList<CatalogTitle> results) => m_results = results;
+        public FakeTmdbMetadataClient(IReadOnlyList<CatalogTitle> results, IReadOnlyDictionary<string, CatalogTitle> detailsByKey = null)
+        {
+            m_results = results;
+            m_detailsByKey = detailsByKey ?? new Dictionary<string, CatalogTitle>(StringComparer.OrdinalIgnoreCase);
+        }
 
         public bool IsConfigured => true;
 
@@ -251,6 +297,12 @@ public sealed class DiscoveryWorkspaceServiceTests
 
         public Task<IReadOnlyList<CatalogTitle>> GetTrendingAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
             Task.FromResult(m_results);
+
+        public Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default) =>
+            Task.FromResult(
+                m_detailsByKey.TryGetValue(CatalogTitleKey.Create(kind, identifiers), out var detailedTitle)
+                    ? detailedTitle
+                    : m_results.FirstOrDefault());
 
         public Task<CatalogTitle> ResolveImdbIdAsync(string imdbId, TitleKind kind, CancellationToken cancellationToken = default) =>
             Task.FromResult(m_results.FirstOrDefault());

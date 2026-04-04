@@ -150,9 +150,9 @@ public sealed class LibraryItemSnapshotViewModel
     private static string BuildPosterUrl(string posterPath) =>
         string.IsNullOrWhiteSpace(posterPath)
             ? null
-            : Path.IsPathRooted(posterPath)
+            : Path.IsPathRooted(posterPath) && File.Exists(posterPath)
                 ? posterPath
-            : Uri.TryCreate(posterPath, UriKind.Absolute, out var absoluteUri)
+            : Uri.TryCreate(posterPath, UriKind.Absolute, out var absoluteUri) && !absoluteUri.IsFile
                 ? absoluteUri.ToString()
             : $"https://image.tmdb.org/t/p/w342{posterPath}";
 }

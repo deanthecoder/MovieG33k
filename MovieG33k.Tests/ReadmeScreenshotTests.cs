@@ -334,6 +334,13 @@ public sealed class ReadmeScreenshotTests
         public Task<IReadOnlyList<CatalogTitle>> GetTrendingAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<CatalogTitle>>(m_titles.Where(title => title.Kind == kind).Take(maxResults).ToArray());
 
+        public Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default) =>
+            Task.FromResult(
+                m_titles.FirstOrDefault(title =>
+                    title.Kind == kind &&
+                    (title.Identifiers.TmdbId == identifiers.TmdbId ||
+                     string.Equals(title.Identifiers.ImdbId, identifiers.ImdbId, StringComparison.OrdinalIgnoreCase))));
+
         public Task<CatalogTitle> ResolveImdbIdAsync(string imdbId, TitleKind kind, CancellationToken cancellationToken = default) =>
             Task.FromResult(m_titles.FirstOrDefault(title =>
                 title.Kind == kind &&

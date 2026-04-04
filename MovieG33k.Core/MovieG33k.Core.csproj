@@ -15,4 +15,8 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
     <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DTC.Core\DTC.Core\DTC.Core.csproj" />
+  </ItemGroup>
 </Project>

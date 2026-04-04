@@ -10,6 +10,7 @@
 
 using System;
 using System.Linq;
+using DTC.Core;
 using MovieG33k.Core.Models;
 
 namespace MovieG33k.Core.Services;
@@ -42,6 +43,8 @@ public sealed class DiscoveryWorkspaceService
         if (query == null)
             throw new ArgumentNullException(nameof(query));
 
+        Logger.Instance.Info(
+            $"Discovering {query.Kind} titles for query '{(string.IsNullOrWhiteSpace(query.Query) ? "<trending>" : query.Query)}' (max {query.MaxResults}).");
         await m_libraryRepository.InitializeAsync(cancellationToken);
 
         var remoteTitles =
@@ -63,6 +66,8 @@ public sealed class DiscoveryWorkspaceService
                     StringComparer.OrdinalIgnoreCase);
         var mergedItems = MergeResults(localMatches, remoteTitles, remoteSnapshotsByKey, query.Query, query.MaxResults);
         var statusText = BuildStatusText(query, localMatches.Count, remoteTitles.Count);
+        Logger.Instance.Info(
+            $"Discovery returned {mergedItems.Count} merged {query.Kind} results ({localMatches.Count} local, {remoteTitles.Count} TMDb).");
 
         return new DiscoveryResultSet(query, mergedItems, statusText);
     }
@@ -77,6 +82,7 @@ public sealed class DiscoveryWorkspaceService
 
         await m_libraryRepository.InitializeAsync(cancellationToken);
         var watchedItems = await m_libraryRepository.GetWatchedAsync(query.Query, query.Kind, query.MaxResults, cancellationToken);
+        Logger.Instance.Info($"Loaded {watchedItems.Count} watched {query.Kind} titles.");
         var mediaType = query.Kind == TitleKind.Movie ? "movies" : "TV shows";
         var statusText =
             watchedItems.Count == 0
@@ -100,6 +106,7 @@ public sealed class DiscoveryWorkspaceService
 
         await m_libraryRepository.InitializeAsync(cancellationToken);
         var watchlistItems = await m_libraryRepository.GetWatchlistAsync(query.Query, query.Kind, query.MaxResults, cancellationToken);
+        Logger.Instance.Info($"Loaded {watchlistItems.Count} watchlist {query.Kind} titles.");
         var mediaType = query.Kind == TitleKind.Movie ? "movies" : "TV shows";
         var statusText =
             watchlistItems.Count == 0
@@ -128,6 +135,7 @@ public sealed class DiscoveryWorkspaceService
         await m_libraryRepository.UpsertTitlesAsync([title], cancellationToken);
 
         var updatedUtc = DateTimeOffset.UtcNow;
+        Logger.Instance.Info($"Saving {stars}/5 rating for '{title.Name}' ({title.Kind}).");
         await m_libraryRepository.UpsertRatingAsync(
             new UserRating(title.Identifiers, title.Kind, stars * 2, updatedUtc),
             cancellationToken);
@@ -147,6 +155,7 @@ public sealed class DiscoveryWorkspaceService
 
         await m_libraryRepository.InitializeAsync(cancellationToken);
         await m_libraryRepository.UpsertTitlesAsync([title], cancellationToken);
+        Logger.Instance.Info($"{(isOnWatchlist ? "Pinning" : "Unpinning")} '{title.Name}' ({title.Kind}).");
 
         if (isOnWatchlist)
         {
@@ -168,6 +177,7 @@ public sealed class DiscoveryWorkspaceService
             throw new ArgumentNullException(nameof(importResult));
 
         await m_libraryRepository.InitializeAsync(cancellationToken);
+        Logger.Instance.Info($"Applying IMDb import with {importResult.Items.Count} resolved candidates.");
 
         var resolvedTitles = importResult.Items
             .Where(item => item.ResolvedTitle != null)
@@ -203,14 +213,38 @@ public sealed class DiscoveryWorkspaceService
             appliedCount++;
         }
 
+        Logger.Instance.Info($"Applied {appliedCount} IMDb import items to the local library.");
         return appliedCount;
+    }
+
+    /// <summary>
+    /// Loads richer metadata for a known title and merges it with local user state.
+    /// </summary>
+    public async Task<LibraryItemSnapshot> GetTitleDetailsAsync(CatalogTitle title, CancellationToken cancellationToken = default)
+    {
+        if (title == null)
+            throw new ArgumentNullException(nameof(title));
+
+        await m_libraryRepository.InitializeAsync(cancellationToken);
+        Logger.Instance.Info($"Refreshing detailed metadata for '{title.Name}' ({title.Kind}).");
+        var detailedTitle = await m_tmdbMetadataClient.GetTitleDetailsAsync(title.Identifiers, title.Kind, cancellationToken) ?? title;
+        await m_libraryRepository.UpsertTitlesAsync([detailedTitle], cancellationToken);
+
+        var catalogKey = CatalogTitleKey.Create(detailedTitle.Kind, detailedTitle.Identifiers);
+        var snapshotsByKey = await m_libraryRepository.GetByCatalogKeysAsync([catalogKey], cancellationToken);
+        return snapshotsByKey.TryGetValue(catalogKey, out var snapshot)
+            ? snapshot
+            : new LibraryItemSnapshot(detailedTitle, SourceLabel: "TMDb");
     }
 
     /// <summary>
     /// Clears the local library database.
     /// </summary>
-    public Task ResetLibraryAsync(CancellationToken cancellationToken = default) =>
-        m_libraryRepository.ResetAsync(cancellationToken);
+    public Task ResetLibraryAsync(CancellationToken cancellationToken = default)
+    {
+        Logger.Instance.Warn("Resetting the local MovieG33k library.");
+        return m_libraryRepository.ResetAsync(cancellationToken);
+    }
 
     private static IReadOnlyList<LibraryItemSnapshot> MergeResults(
         IReadOnlyList<LibraryItemSnapshot> localMatches,

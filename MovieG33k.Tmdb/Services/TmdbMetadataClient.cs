@@ -12,6 +12,7 @@ using System.Globalization;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using DTC.Core;
 using MovieG33k.Core.Models;
 using MovieG33k.Core.Services;
 using MovieG33k.Tmdb.Models;
@@ -55,7 +56,12 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             return await GetTrendingAsync(query.Kind, query.MaxResults, cancellationToken);
 
         if (!IsConfigured)
+        {
+            Logger.Instance.Warn($"TMDb search for '{query.Query}' is using stub results because no TMDb credential is configured.");
             return GetStubSearchResults(query.Kind, query.Query, query.MaxResults);
+        }
+
+        Logger.Instance.Info($"Searching TMDb for '{query.Query}' ({query.Kind}, max {query.MaxResults}).");
 
         var path = query.Kind == TitleKind.Movie ? "/3/search/movie" : "/3/search/tv";
         var requestUri = BuildRequestUri(path, new Dictionary<string, string>
@@ -65,15 +71,24 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             ["language"] = m_options.Language
         });
 
-        return await SendAndMapAsync(requestUri, query.Kind, query.MaxResults, cancellationToken)
-            ?? GetStubSearchResults(query.Kind, query.Query, query.MaxResults);
+        var results = await SendAndMapAsync(requestUri, query.Kind, query.MaxResults, cancellationToken);
+        if (results != null)
+            return results;
+
+        Logger.Instance.Warn($"TMDb search failed for '{query.Query}'. Falling back to stub results.");
+        return GetStubSearchResults(query.Kind, query.Query, query.MaxResults);
     }
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<CatalogTitle>> GetTrendingAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default)
     {
         if (!IsConfigured)
+        {
+            Logger.Instance.Warn($"TMDb trending lookup for {kind} is using stub results because no TMDb credential is configured.");
             return GetStubTrendingResults(kind, maxResults);
+        }
+
+        Logger.Instance.Info($"Loading TMDb trending {kind} titles (max {maxResults}).");
 
         var mediaPath = kind == TitleKind.Movie ? "movie" : "tv";
         var requestUri = BuildRequestUri($"/3/trending/{mediaPath}/day", new Dictionary<string, string>
@@ -81,8 +96,59 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             ["language"] = m_options.Language
         });
 
-        return await SendAndMapAsync(requestUri, kind, maxResults, cancellationToken)
-            ?? GetStubTrendingResults(kind, maxResults);
+        var results = await SendAndMapAsync(requestUri, kind, maxResults, cancellationToken);
+        if (results != null)
+            return results;
+
+        Logger.Instance.Warn($"TMDb trending lookup failed for {kind}. Falling back to stub results.");
+        return GetStubTrendingResults(kind, maxResults);
+    }
+
+    /// <inheritdoc />
+    public async Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(identifiers);
+
+        if (!IsConfigured)
+        {
+            Logger.Instance.Warn($"TMDb detail lookup for {kind} title '{identifiers.ImdbId ?? identifiers.TmdbId?.ToString() ?? "<unknown>"}' is using stub data because no TMDb credential is configured.");
+            return GetStubTitleDetails(identifiers, kind);
+        }
+
+        if (identifiers.TmdbId is null)
+        {
+            if (!string.IsNullOrWhiteSpace(identifiers.ImdbId))
+                return await ResolveImdbIdAsync(identifiers.ImdbId, kind, cancellationToken);
+
+            return null;
+        }
+
+        var path = kind == TitleKind.Movie ? $"/3/movie/{identifiers.TmdbId}" : $"/3/tv/{identifiers.TmdbId}";
+        var requestUri = BuildRequestUri(path, new Dictionary<string, string>
+        {
+            ["language"] = m_options.Language
+        });
+        Logger.Instance.Info($"Loading TMDb details for {kind} id '{identifiers.TmdbId}'.");
+
+        try
+        {
+            using var request = CreateRequestMessage(requestUri);
+            using var response = await m_httpClient.SendAsync(request, cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var document = JsonDocument.Parse(content);
+            return MapTitle(document.RootElement, kind);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            Logger.Instance.Warn($"TMDb detail lookup failed for {kind} id '{identifiers.TmdbId}'. Falling back to cached or stub metadata.");
+            return GetStubTitleDetails(identifiers, kind);
+        }
     }
 
     /// <inheritdoc />
@@ -92,8 +158,13 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             throw new ArgumentException("An IMDb identifier is required.", nameof(imdbId));
 
         if (!IsConfigured)
+        {
+            Logger.Instance.Warn($"TMDb IMDb resolution for '{imdbId}' is using stub data because no TMDb credential is configured.");
             return GetStubTrendingResults(kind, 10)
                 .FirstOrDefault(title => string.Equals(title.Identifiers.ImdbId, imdbId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        Logger.Instance.Info($"Resolving IMDb id '{imdbId}' via TMDb for {kind}.");
 
         var requestUri = BuildRequestUri($"/3/find/{imdbId}", new Dictionary<string, string>
         {
@@ -121,6 +192,7 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
         }
         catch
         {
+            Logger.Instance.Warn($"TMDb IMDb resolution failed for '{imdbId}'. Falling back to stub data.");
             return GetStubTrendingResults(kind, 10)
                 .FirstOrDefault(title => string.Equals(title.Identifiers.ImdbId, imdbId, StringComparison.OrdinalIgnoreCase));
         }
@@ -136,6 +208,8 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
         {
             using var request = CreateRequestMessage(requestUri);
             using var response = await m_httpClient.SendAsync(request, cancellationToken);
+            if ((int)response.StatusCode == 429)
+                Logger.Instance.Warn($"TMDb returned HTTP 429 for request '{requestUri}'.");
             response.EnsureSuccessStatusCode();
 
             var content = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -143,12 +217,14 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             if (!document.RootElement.TryGetProperty("results", out var resultsElement))
                 return Array.Empty<CatalogTitle>();
 
-            return resultsElement
+            var results = resultsElement
                 .EnumerateArray()
                 .Select(element => MapTitle(element, kind))
                 .Where(title => title != null)
                 .Take(maxResults)
                 .ToArray();
+            Logger.Instance.Info($"TMDb request '{requestUri}' returned {results.Length} {kind} results.");
+            return results;
         }
         catch (OperationCanceledException)
         {
@@ -156,6 +232,7 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
         }
         catch
         {
+            Logger.Instance.Warn($"TMDb request '{requestUri}' failed.");
             return null;
         }
     }
@@ -200,7 +277,7 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             ? parsedDate
             : null;
 
-        var genres = Array.Empty<string>();
+        var genres = GetGenres(element);
         if (kind == TitleKind.Movie)
         {
             return new MovieEntry(
@@ -213,6 +290,7 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
                 element.TryGetProperty("backdrop_path", out var backdropElement) ? backdropElement.GetString() : null,
                 genres,
                 element.TryGetProperty("original_language", out var languageElement) ? languageElement.GetString() : null,
+                TryGetRuntimeMinutes(element),
                 PublicRating: TryGetPublicRating(element));
         }
 
@@ -226,6 +304,8 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             element.TryGetProperty("backdrop_path", out var tvBackdropElement) ? tvBackdropElement.GetString() : null,
             genres,
             element.TryGetProperty("original_language", out var tvLanguageElement) ? tvLanguageElement.GetString() : null,
+            TryGetSeasonCount(element),
+            TryGetEpisodeCount(element),
             PublicRating: TryGetPublicRating(element));
     }
 
@@ -241,6 +321,55 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             _ => null
         };
     }
+
+    private static IReadOnlyList<string> GetGenres(JsonElement element)
+    {
+        if (!element.TryGetProperty("genres", out var genresElement) || genresElement.ValueKind != JsonValueKind.Array)
+            return Array.Empty<string>();
+
+        return genresElement
+            .EnumerateArray()
+            .Select(genreElement => genreElement.TryGetProperty("name", out var nameElement) ? nameElement.GetString() : null)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToArray();
+    }
+
+    private static int? TryGetRuntimeMinutes(JsonElement element)
+    {
+        if (!element.TryGetProperty("runtime", out var runtimeElement) || runtimeElement.ValueKind != JsonValueKind.Number)
+            return null;
+
+        return runtimeElement.TryGetInt32(out var runtimeMinutes) && runtimeMinutes > 0
+            ? runtimeMinutes
+            : null;
+    }
+
+    private static int? TryGetSeasonCount(JsonElement element)
+    {
+        if (!element.TryGetProperty("number_of_seasons", out var seasonCountElement) || seasonCountElement.ValueKind != JsonValueKind.Number)
+            return null;
+
+        return seasonCountElement.TryGetInt32(out var seasonCount)
+            ? seasonCount
+            : null;
+    }
+
+    private static int? TryGetEpisodeCount(JsonElement element)
+    {
+        if (!element.TryGetProperty("number_of_episodes", out var episodeCountElement) || episodeCountElement.ValueKind != JsonValueKind.Number)
+            return null;
+
+        return episodeCountElement.TryGetInt32(out var episodeCount)
+            ? episodeCount
+            : null;
+    }
+
+    private static CatalogTitle GetStubTitleDetails(TitleIdentifiers identifiers, TitleKind kind) =>
+        GetStubTrendingResults(kind, 50)
+            .FirstOrDefault(title =>
+                (identifiers.TmdbId.HasValue && title.Identifiers.TmdbId == identifiers.TmdbId) ||
+                (!string.IsNullOrWhiteSpace(identifiers.ImdbId) &&
+                 string.Equals(title.Identifiers.ImdbId, identifiers.ImdbId, StringComparison.OrdinalIgnoreCase)));
 
     private static IReadOnlyList<CatalogTitle> GetStubTrendingResults(TitleKind kind, int maxResults)
     {

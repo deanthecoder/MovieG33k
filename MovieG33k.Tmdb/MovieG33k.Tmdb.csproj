@@ -17,6 +17,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\DTC.Core\DTC.Core\DTC.Core.csproj" />
     <ProjectReference Include="..\MovieG33k.Core\MovieG33k.Core.csproj" />
   </ItemGroup>
 </Project>

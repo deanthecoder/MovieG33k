@@ -10,6 +10,7 @@
 
 using System.Globalization;
 using System.IO;
+using DTC.Core;
 using Microsoft.Data.Sqlite;
 using MovieG33k.Core.Models;
 using MovieG33k.Core.Services;
@@ -54,6 +55,8 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
     {
         if (m_isInitialized)
             return;
+
+        Logger.Instance.Info($"Initializing MovieG33k SQLite database at '{m_databaseFile.FullName}'.");
 
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
@@ -146,6 +149,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         }
 
         m_isInitialized = true;
+        Logger.Instance.Info("MovieG33k SQLite database ready.");
     }
 
     /// <inheritdoc />
@@ -658,6 +662,8 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        Logger.Instance.Warn($"Resetting MovieG33k SQLite database at '{m_databaseFile.FullName}'.");
+
         SqliteConnection.ClearAllPools();
         DeleteIfPresent(m_databaseFile);
         DeleteIfPresent(new FileInfo($"{m_databaseFile.FullName}-wal"));
@@ -793,6 +799,6 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                 reader.IsDBNull(reader.GetOrdinal("watchlist_notes")) ? null : reader.GetString(reader.GetOrdinal("watchlist_notes")));
         }
 
-        return new LibraryItemSnapshot(title, rating, watchState, watchlistEntry, Array.Empty<ProviderAvailability>(), "Local");
+        return new LibraryItemSnapshot(title, rating, watchState, watchlistEntry, Array.Empty<ProviderAvailability>());
     }
 }

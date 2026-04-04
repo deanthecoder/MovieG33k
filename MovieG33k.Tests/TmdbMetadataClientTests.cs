@@ -86,6 +86,23 @@ public sealed class TmdbMetadataClientTests
         Assert.That(results[0].PublicRating, Is.EqualTo(8.5m));
     }
 
+    [Test]
+    public async Task GetTitleDetailsAsyncMapsMovieRuntimeWhenConfigured()
+    {
+        var handler = new DetailsMessageHandler();
+        var client = new TmdbMetadataClient(new HttpClient(handler), new TmdbOptions
+        {
+            AccessToken = "private-access-token",
+            RegionCode = "GB"
+        });
+
+        var result = await client.GetTitleDetailsAsync(new TitleIdentifiers(5548, "tt0093870"), TitleKind.Movie);
+
+        Assert.That(result, Is.TypeOf<MovieEntry>());
+        Assert.That(((MovieEntry)result).RuntimeMinutes, Is.EqualTo(102));
+        Assert.That(result.Genres, Does.Contain("Action"));
+    }
+
     private sealed class CapturingMessageHandler : HttpMessageHandler
     {
         public string LastAuthorizationScheme { get; private set; }
@@ -121,5 +138,32 @@ public sealed class TmdbMetadataClientTests
                         """)
                 });
         }
+    }
+
+    private sealed class DetailsMessageHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(
+                new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """
+                        {
+                          "id": 5548,
+                          "title": "RoboCop",
+                          "original_title": "RoboCop",
+                          "overview": "Part man. Part machine. All cop.",
+                          "release_date": "1987-07-17",
+                          "poster_path": "/esmAU0fCO28FbS6bUBKLAzJrohZ.jpg",
+                          "original_language": "en",
+                          "runtime": 102,
+                          "vote_average": 7.4,
+                          "genres": [
+                            { "id": 28, "name": "Action" },
+                            { "id": 878, "name": "Science Fiction" }
+                          ]
+                        }
+                        """)
+                });
     }
 }

@@ -41,6 +41,11 @@ public interface ITmdbMetadataClient
     Task<IReadOnlyList<CatalogTitle>> GetTrendingAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Loads richer metadata for a known title when available.
+    /// </summary>
+    Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Resolves an IMDb identifier to a TMDb-backed title.
     /// </summary>
     Task<CatalogTitle> ResolveImdbIdAsync(string imdbId, TitleKind kind, CancellationToken cancellationToken = default);

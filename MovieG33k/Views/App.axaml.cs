@@ -55,6 +55,9 @@ public class App : Application
                 RegionCode = Environment.GetEnvironmentVariable("TMDB_REGION") ?? "GB",
                 Language = Environment.GetEnvironmentVariable("TMDB_LANGUAGE") ?? "en-GB"
             };
+            Logger.Instance.Info(
+                $"TMDb mode: {(string.IsNullOrWhiteSpace(tmdbOptions.AccessToken) ? string.IsNullOrWhiteSpace(tmdbOptions.ApiKey) ? "Not configured" : "API key" : "Access token")} " +
+                $"(region {tmdbOptions.RegionCode}, language {tmdbOptions.Language}).");
             var repository = new SqliteLibraryRepository();
             var tmdbClient = new TmdbMetadataClient(m_httpClient, tmdbOptions);
             var discoveryWorkspaceService = new DiscoveryWorkspaceService(repository, tmdbClient);
@@ -123,6 +126,7 @@ public class App : Application
         settings.Save();
         tmdbOptions.AccessToken = settings.TmdbAccessToken;
         tmdbOptions.ApiKey = settings.TmdbApiKey;
+        Logger.Instance.Info("Saved a TMDb credential from the first-run prompt.");
         await viewModel.RefreshAsync();
     }
 

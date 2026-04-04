@@ -65,6 +65,9 @@ public sealed class ImdbCsvImportServiceTests
         public Task<IReadOnlyList<CatalogTitle>> GetTrendingAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<CatalogTitle>>([]);
 
+        public Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default) =>
+            Task.FromResult<CatalogTitle>(null);
+
         public Task<CatalogTitle> ResolveImdbIdAsync(string imdbId, TitleKind kind, CancellationToken cancellationToken = default) =>
             Task.FromResult<CatalogTitle>(
                 kind == TitleKind.Movie
