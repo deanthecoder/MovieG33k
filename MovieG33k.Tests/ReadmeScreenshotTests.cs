@@ -9,7 +9,6 @@
 // THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND.
 
 using System.Reflection;
-using Avalonia.Media.Imaging;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Threading;
@@ -58,7 +57,7 @@ public sealed class ReadmeScreenshotTests
         {
             await viewModel.RefreshAsync();
             viewModel.SelectedResult = viewModel.Results.First(item => item.Title == "RoboCop");
-            await ShowSelectedPosterAsync(viewModel);
+            await WaitForSelectedPosterAsync(viewModel);
             SaveScreenshot(window, "browse-movies.png");
         }
         finally
@@ -80,7 +79,7 @@ public sealed class ReadmeScreenshotTests
             viewModel.ShowWatchlistCommand.Execute(null);
             await viewModel.RefreshAsync();
             viewModel.SelectedResult = viewModel.Results.First(item => item.Title == "Hackers");
-            await ShowSelectedPosterAsync(viewModel);
+            await WaitForSelectedPosterAsync(viewModel);
             SaveScreenshot(window, "pinned-movies.png");
         }
         finally
@@ -102,7 +101,7 @@ public sealed class ReadmeScreenshotTests
             viewModel.ShowWatchedCommand.Execute(null);
             await viewModel.RefreshAsync();
             viewModel.SelectedResult = viewModel.Results.First(item => item.Title == "Flight of the Navigator");
-            await ShowSelectedPosterAsync(viewModel);
+            await WaitForSelectedPosterAsync(viewModel);
             SaveScreenshot(window, "watched-movies.png");
         }
         finally
@@ -213,25 +212,19 @@ public sealed class ReadmeScreenshotTests
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Render);
     }
 
-    private static async Task ShowSelectedPosterAsync(MainWindowViewModel viewModel)
+    private static async Task WaitForSelectedPosterAsync(MainWindowViewModel viewModel)
     {
-        var posterPath = viewModel.SelectedResult?.PosterUrl;
-        Assert.That(string.IsNullOrWhiteSpace(posterPath), Is.False, $"Expected a poster path for '{viewModel.SelectedTitle}'.");
-        Assert.That(File.Exists(posterPath), Is.True, $"Expected the README poster asset to exist for '{viewModel.SelectedTitle}'.");
+        for (var attempt = 0; attempt < 30; attempt++)
+        {
+            await WaitForRenderAsync();
 
-        using var posterStream = File.OpenRead(posterPath);
-        var poster = new Bitmap(posterStream);
+            if (viewModel.HasSelectedPoster)
+                return;
 
-        var selectedPosterProperty = typeof(MainWindowViewModel).GetProperty(
-            "SelectedPoster",
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        Assert.That(selectedPosterProperty, Is.Not.Null, "Expected the SelectedPoster property to exist.");
+            await Task.Delay(150);
+        }
 
-        selectedPosterProperty!.SetValue(viewModel, poster);
-
-        await WaitForRenderAsync();
-        await WaitForRenderAsync();
-        Assert.That(viewModel.HasSelectedPoster, Is.True, $"Expected '{viewModel.SelectedTitle}' to show its poster in the README screenshot.");
+        Assert.Fail($"Timed out waiting for the README screenshot poster to load for '{viewModel.SelectedTitle}'.");
     }
 
     private static string GetRepositoryRootPath()

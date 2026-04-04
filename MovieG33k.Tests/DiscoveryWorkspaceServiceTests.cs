@@ -150,6 +150,30 @@ public sealed class DiscoveryWorkspaceServiceTests
         Assert.That(result.StatusText, Does.Contain("pinned"));
     }
 
+    [Test]
+    public async Task SaveRatingAsyncRemovesTheTitleFromTheWatchlist()
+    {
+        var title = new MovieEntry(
+            new TitleIdentifiers(5548, "tt0093870"),
+            "RoboCop",
+            "RoboCop",
+            "A cyborg lawman patrols Detroit.",
+            new DateOnly(1987, 7, 17),
+            null,
+            null,
+            ["Action"],
+            "en",
+            102);
+        var repository = new FakeLibraryRepository([]);
+        var tmdbClient = new FakeTmdbMetadataClient([]);
+        var service = new DiscoveryWorkspaceService(repository, tmdbClient);
+
+        await service.SaveRatingAsync(title, 4);
+
+        Assert.That(repository.DeletedWatchlistEntries, Has.Count.EqualTo(1));
+        Assert.That(repository.DeletedWatchlistEntries[0], Is.EqualTo((title.Identifiers, TitleKind.Movie)));
+    }
+
     private sealed class FakeLibraryRepository : ILibraryRepository
     {
         private readonly IReadOnlyList<LibraryItemSnapshot> m_searchResults;
@@ -170,6 +194,7 @@ public sealed class DiscoveryWorkspaceServiceTests
         }
 
         public List<CatalogTitle> UpsertedTitles { get; } = [];
+        public List<(TitleIdentifiers Identifiers, TitleKind Kind)> DeletedWatchlistEntries { get; } = [];
 
         public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
@@ -185,7 +210,11 @@ public sealed class DiscoveryWorkspaceServiceTests
 
         public Task UpsertWatchlistEntryAsync(WatchlistEntry watchlistEntry, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-        public Task DeleteWatchlistEntryAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task DeleteWatchlistEntryAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default)
+        {
+            DeletedWatchlistEntries.Add((identifiers, kind));
+            return Task.CompletedTask;
+        }
 
         public Task UpsertProviderAvailabilityAsync(TitleIdentifiers identifiers, TitleKind kind, IReadOnlyList<ProviderAvailability> providerAvailabilities, CancellationToken cancellationToken = default) => Task.CompletedTask;
 

@@ -134,6 +134,7 @@ public sealed class DiscoveryWorkspaceService
         await m_libraryRepository.UpsertWatchStateAsync(
             new WatchState(title.Identifiers, title.Kind, WatchStatus.Watched, updatedUtc),
             cancellationToken);
+        await m_libraryRepository.DeleteWatchlistEntryAsync(title.Identifiers, title.Kind, cancellationToken);
     }
 
     /// <summary>
@@ -198,6 +199,7 @@ public sealed class DiscoveryWorkspaceService
             await m_libraryRepository.UpsertWatchStateAsync(
                 new WatchState(item.ResolvedTitle.Identifiers, item.ResolvedTitle.Kind, WatchStatus.Watched, watchedUtc),
                 cancellationToken);
+            await m_libraryRepository.DeleteWatchlistEntryAsync(item.ResolvedTitle.Identifiers, item.ResolvedTitle.Kind, cancellationToken);
             appliedCount++;
         }
 

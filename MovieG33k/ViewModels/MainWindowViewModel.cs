@@ -11,8 +11,10 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Windows.Input;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using DTC.Core;
 using DTC.Core.Commands;
 using DTC.Core.UI;
@@ -41,7 +43,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         Watched
     }
 
-    private static readonly HttpClient PosterHttpClient = new();
+    private static readonly HttpClient PosterHttpClient = CreatePosterHttpClient();
     private readonly DiscoveryWorkspaceService m_discoveryWorkspaceService;
     private readonly IImdbImportService m_imdbImportService;
     private readonly IDialogService m_dialogService;
@@ -408,7 +410,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         m_posterCancellationTokenSource?.Cancel();
         m_posterCancellationTokenSource = new CancellationTokenSource();
         var cancellationToken = m_posterCancellationTokenSource.Token;
-        SelectedPoster = null;
+        await Dispatcher.UIThread.InvokeAsync(() => SelectedPoster = null);
 
         var posterUrl = SelectedResult?.PosterUrl;
         if (string.IsNullOrWhiteSpace(posterUrl))
@@ -419,18 +421,22 @@ public sealed class MainWindowViewModel : ViewModelBase
             await using var networkStream = await OpenPosterStreamAsync(posterUrl, cancellationToken);
             using var memoryStream = new MemoryStream();
             await networkStream.CopyToAsync(memoryStream, cancellationToken);
-            memoryStream.Position = 0;
             if (cancellationToken.IsCancellationRequested)
                 return;
 
-            SelectedPoster = new Bitmap(memoryStream);
+            var posterBytes = memoryStream.ToArray();
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                using var bitmapStream = new MemoryStream(posterBytes, writable: false);
+                SelectedPoster = new Bitmap(bitmapStream);
+            });
         }
         catch (OperationCanceledException)
         {
         }
         catch
         {
-            SelectedPoster = null;
+            await Dispatcher.UIThread.InvokeAsync(() => SelectedPoster = null);
         }
     }
 
@@ -457,6 +463,13 @@ public sealed class MainWindowViewModel : ViewModelBase
         await RefreshResultsAsync();
     }
 
+    private static HttpClient CreatePosterHttpClient()
+    {
+        var client = new HttpClient();
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("MovieG33k/1.0");
+        return client;
+    }
     private async Task ToggleWatchlistAsync()
     {
         if (SelectedResult == null || !CanToggleWatchlist)
