@@ -295,6 +295,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         get => m_currentMode;
         set
         {
+            var previousMode = m_currentMode;
             if (!SetField(ref m_currentMode, value))
                 return;
 
@@ -305,6 +306,10 @@ public sealed class MainWindowViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsInsightsMode));
             OnPropertyChanged(nameof(SearchWatermark));
             OnPropertyChanged(nameof(ResultsHeading));
+
+            if (previousMode != value)
+                SelectedResult = null;
+
             ResetResultLimitAndRefresh();
         }
     }
@@ -476,6 +481,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         m_refreshCancellationTokenSource?.Cancel();
         m_refreshCancellationTokenSource = new CancellationTokenSource();
         var cancellationToken = m_refreshCancellationTokenSource.Token;
+        var selectedResultIndex = SelectedResult == null ? -1 : Results.IndexOf(SelectedResult);
         var selectedCatalogKey =
             SelectedResult == null
                 ? null
@@ -493,7 +499,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
             if (CurrentMode == LibraryViewMode.Recommended)
             {
-                await RefreshRecommendationsAsync(cancellationToken);
+                await RefreshRecommendationsAsync(cancellationToken, selectedCatalogKey, selectedResultIndex);
                 return;
             }
 
@@ -516,14 +522,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
             CanLoadMore = result.Items.Count >= m_resultLimit;
 
-            SelectedResult =
-                Results.FirstOrDefault(item =>
-                    selectedCatalogKey != null &&
-                    string.Equals(
-                        CatalogTitleKey.Create(item.Snapshot.Title.Kind, item.Snapshot.Title.Identifiers),
-                        selectedCatalogKey,
-                        StringComparison.OrdinalIgnoreCase))
-                ?? Results.FirstOrDefault();
+            SelectedResult = ResolvePreferredSelection(selectedCatalogKey, selectedResultIndex);
             StatusText = result.StatusText;
         }
         catch (OperationCanceledException)
@@ -540,7 +539,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private async Task RefreshRecommendationsAsync(CancellationToken cancellationToken)
+    private async Task RefreshRecommendationsAsync(CancellationToken cancellationToken, string selectedCatalogKey, int selectedResultIndex)
     {
         var query = new DiscoveryQuery(SearchText, SelectedKind.Kind, m_regionCode, m_resultLimit);
         var candidates = await m_recommendationService.GetRecommendationsAsync(query, cancellationToken);
@@ -548,7 +547,6 @@ public sealed class MainWindowViewModel : ViewModelBase
             return;
 
         Results.Clear();
-        SelectedResult = null;
         CanLoadMore = candidates.Count >= m_resultLimit;
         m_enrichedDetailKeys.Clear();
         foreach (var candidate in candidates)
@@ -564,7 +562,28 @@ public sealed class MainWindowViewModel : ViewModelBase
                     ? $"Recommended {mediaType} based on your ratings."
                     : $"Recommended {mediaType} matching \"{query.Query}\".";
 
-        SelectedResult = Results.FirstOrDefault();
+        SelectedResult = ResolvePreferredSelection(selectedCatalogKey, selectedResultIndex);
+    }
+
+    private LibraryItemSnapshotViewModel ResolvePreferredSelection(string selectedCatalogKey, int selectedResultIndex)
+    {
+        var matchedSelection =
+            Results.FirstOrDefault(item =>
+                selectedCatalogKey != null &&
+                string.Equals(
+                    CatalogTitleKey.Create(item.Snapshot.Title.Kind, item.Snapshot.Title.Identifiers),
+                    selectedCatalogKey,
+                    StringComparison.OrdinalIgnoreCase));
+        if (matchedSelection != null)
+            return matchedSelection;
+
+        if (Results.Count == 0)
+            return null;
+
+        if (selectedResultIndex >= 0)
+            return Results[Math.Min(selectedResultIndex, Results.Count - 1)];
+
+        return Results.FirstOrDefault();
     }
 
     private async Task RefreshInsightsAsync(CancellationToken cancellationToken)

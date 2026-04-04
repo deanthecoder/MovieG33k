@@ -41,6 +41,11 @@ public interface ITmdbMetadataClient
     Task<IReadOnlyList<CatalogTitle>> GetTrendingAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns a steadier discovery pool suitable for recommendations and future filters.
+    /// </summary>
+    Task<IReadOnlyList<CatalogTitle>> GetDiscoverAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Loads richer metadata for a known title when available.
     /// </summary>
     Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default);

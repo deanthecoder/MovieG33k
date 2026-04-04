@@ -46,7 +46,7 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
         var genreAffinity = BuildGenreAffinity(ratedTitles);
         var decadeAffinity = BuildDecadeAffinity(ratedTitles);
 
-        var remoteCandidates = await m_tmdbMetadataClient.GetTrendingAsync(query.Kind, Math.Max(query.MaxResults * 3, CandidatePoolSize), cancellationToken);
+        var remoteCandidates = await m_tmdbMetadataClient.GetDiscoverAsync(query.Kind, Math.Max(query.MaxResults * 3, CandidatePoolSize), cancellationToken);
         if (remoteCandidates.Count == 0)
             return Array.Empty<RecommendationCandidate>();
 

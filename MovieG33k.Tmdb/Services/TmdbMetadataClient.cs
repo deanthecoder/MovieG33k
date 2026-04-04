@@ -108,6 +108,38 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<CatalogTitle>> GetDiscoverAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default)
+    {
+        if (!IsConfigured)
+        {
+            Logger.Instance.Warn($"TMDb discover lookup for {kind} is using stub results because no TMDb credential is configured.");
+            return GetStubTrendingResults(kind, maxResults);
+        }
+
+        Logger.Instance.Info($"Loading TMDb discover {kind} titles (max {maxResults}).");
+
+        var path = kind == TitleKind.Movie ? "/3/discover/movie" : "/3/discover/tv";
+        var results = await SendAndMapPagedAsync(
+            path,
+            kind,
+            maxResults,
+            new Dictionary<string, string>
+            {
+                ["language"] = m_options.Language,
+                ["include_adult"] = "false",
+                ["sort_by"] = "popularity.desc",
+                ["vote_count.gte"] = "200",
+                ["watch_region"] = m_options.RegionCode
+            },
+            cancellationToken);
+        if (results != null)
+            return results;
+
+        Logger.Instance.Warn($"TMDb discover lookup failed for {kind}. Falling back to trending results.");
+        return await GetTrendingAsync(kind, maxResults, cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(identifiers);

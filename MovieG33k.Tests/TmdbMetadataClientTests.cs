@@ -145,6 +145,26 @@ public sealed class TmdbMetadataClientTests
         Assert.That(handler.RequestUris[1], Does.Contain("page=2"));
     }
 
+    [Test]
+    public async Task GetDiscoverAsyncUsesDiscoverEndpointWithStableSort()
+    {
+        var handler = new PagedTrendingMessageHandler();
+        var client = new TmdbMetadataClient(new HttpClient(handler), new TmdbOptions
+        {
+            AccessToken = "private-access-token",
+            RegionCode = "GB",
+            Language = "en-GB"
+        });
+
+        var results = await client.GetDiscoverAsync(TitleKind.Movie, 25);
+
+        Assert.That(results, Has.Count.EqualTo(25));
+        Assert.That(handler.RequestUris[0], Does.Contain("/3/discover/movie"));
+        Assert.That(handler.RequestUris[0], Does.Contain("sort_by=popularity.desc"));
+        Assert.That(handler.RequestUris[0], Does.Contain("vote_count.gte=200"));
+        Assert.That(handler.RequestUris[0], Does.Contain("watch_region=GB"));
+    }
+
     private sealed class CapturingMessageHandler : HttpMessageHandler
     {
         public string LastAuthorizationScheme { get; private set; }

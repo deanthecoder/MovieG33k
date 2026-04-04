@@ -240,6 +240,130 @@ public sealed class MainWindowViewModelTests
         Assert.That(viewModel.SelectedTitle, Is.EqualTo("Alien"));
     }
 
+    [Test]
+    public async Task RecommendedModeSelectsTheNextResultWhenTheCurrentOneDisappears()
+    {
+        var alien = new MovieEntry(
+            new TitleIdentifiers(348, "tt0078748"),
+            "Alien",
+            "Alien",
+            "One",
+            new DateOnly(1979, 5, 25),
+            null,
+            null,
+            ["Science Fiction"],
+            "en");
+        var robocop = new MovieEntry(
+            new TitleIdentifiers(5548, "tt0093870"),
+            "RoboCop",
+            "RoboCop",
+            "Two",
+            new DateOnly(1987, 7, 17),
+            null,
+            null,
+            ["Action"],
+            "en");
+        var hackers = new MovieEntry(
+            new TitleIdentifiers(10428, "tt0113243"),
+            "Hackers",
+            "Hackers",
+            "Three",
+            new DateOnly(1995, 9, 15),
+            null,
+            null,
+            ["Crime"],
+            "en");
+
+        var recommendationService = new FakeRecommendationService(
+        [
+            new RecommendationCandidate(alien, 9, "Recommended", ["Science Fiction"]),
+            new RecommendationCandidate(robocop, 8, "Recommended", ["Action"]),
+            new RecommendationCandidate(hackers, 7, "Recommended", ["Crime"])
+        ]);
+
+        var viewModel = new MainWindowViewModel(
+            new DiscoveryWorkspaceService(new FakeLibraryRepository([]), new FakeTmdbMetadataClient([])),
+            recommendationService,
+            new ImdbCsvImportService(new FakeTmdbMetadataClient([])),
+            new FakeDialogService());
+
+        viewModel.ShowRecommendedCommand.Execute(null);
+        await viewModel.RefreshAsync();
+        viewModel.SelectedResult = viewModel.Results[1];
+
+        recommendationService.Results =
+        [
+            new RecommendationCandidate(alien, 9, "Recommended", ["Science Fiction"]),
+            new RecommendationCandidate(hackers, 7, "Recommended", ["Crime"])
+        ];
+
+        await viewModel.RefreshAsync();
+
+        Assert.That(viewModel.SelectedResult, Is.Not.Null);
+        Assert.That(viewModel.SelectedResult.Title, Is.EqualTo("Hackers"));
+    }
+
+    [Test]
+    public async Task SwitchingToRecommendedModeSelectsTheFirstRecommendation()
+    {
+        var alien = new MovieEntry(
+            new TitleIdentifiers(348, "tt0078748"),
+            "Alien",
+            "Alien",
+            "One",
+            new DateOnly(1979, 5, 25),
+            null,
+            null,
+            ["Science Fiction"],
+            "en");
+        var robocop = new MovieEntry(
+            new TitleIdentifiers(5548, "tt0093870"),
+            "RoboCop",
+            "RoboCop",
+            "Two",
+            new DateOnly(1987, 7, 17),
+            null,
+            null,
+            ["Action"],
+            "en");
+        var hackers = new MovieEntry(
+            new TitleIdentifiers(10428, "tt0113243"),
+            "Hackers",
+            "Hackers",
+            "Three",
+            new DateOnly(1995, 9, 15),
+            null,
+            null,
+            ["Crime"],
+            "en");
+
+        var repository = new FakeLibraryRepository([
+            new LibraryItemSnapshot(alien, SourceLabel: "Local"),
+            new LibraryItemSnapshot(robocop, SourceLabel: "Local")
+        ]);
+        var recommendationService = new FakeRecommendationService(
+        [
+            new RecommendationCandidate(hackers, 10, "Recommended", ["Crime"]),
+            new RecommendationCandidate(robocop, 9, "Recommended", ["Action"])
+        ]);
+        var tmdbClient = new FakeTmdbMetadataClient([]);
+        var viewModel = new MainWindowViewModel(
+            new DiscoveryWorkspaceService(repository, tmdbClient),
+            recommendationService,
+            new ImdbCsvImportService(tmdbClient),
+            new FakeDialogService());
+
+        await viewModel.RefreshAsync();
+        viewModel.SelectedResult = viewModel.Results[1];
+
+        viewModel.ShowRecommendedCommand.Execute(null);
+        await viewModel.RefreshAsync();
+
+        Assert.That(viewModel.IsRecommendedMode, Is.True);
+        Assert.That(viewModel.SelectedResult, Is.Not.Null);
+        Assert.That(viewModel.SelectedResult.Title, Is.EqualTo("Hackers"));
+    }
+
     private sealed class FakeLibraryRepository : ILibraryRepository
     {
         private readonly List<LibraryItemSnapshot> m_searchResults;
@@ -354,6 +478,9 @@ public sealed class MainWindowViewModelTests
         public Task<IReadOnlyList<CatalogTitle>> GetTrendingAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
             Task.FromResult(m_results);
 
+        public Task<IReadOnlyList<CatalogTitle>> GetDiscoverAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
+            Task.FromResult(m_results);
+
         public Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default) =>
             Task.FromResult(m_results.FirstOrDefault());
 
@@ -363,12 +490,12 @@ public sealed class MainWindowViewModelTests
 
     private sealed class FakeRecommendationService : IRecommendationService
     {
-        private readonly IReadOnlyList<RecommendationCandidate> m_results;
+        public FakeRecommendationService(IReadOnlyList<RecommendationCandidate> results) => Results = results;
 
-        public FakeRecommendationService(IReadOnlyList<RecommendationCandidate> results) => m_results = results;
+        public IReadOnlyList<RecommendationCandidate> Results { get; set; }
 
         public Task<IReadOnlyList<RecommendationCandidate>> GetRecommendationsAsync(DiscoveryQuery query, CancellationToken cancellationToken = default) =>
-            Task.FromResult(m_results);
+            Task.FromResult(Results);
     }
 
     private sealed class FakeDialogService : DTC.Core.UI.IDialogService
