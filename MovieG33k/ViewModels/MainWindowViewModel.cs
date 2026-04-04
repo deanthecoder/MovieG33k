@@ -510,7 +510,6 @@ public sealed class MainWindowViewModel : ViewModelBase
             {
                 SourceLabel = ResolveDisplaySourceLabel(selectedSnapshot, detailedSnapshot)
             };
-            var replacement = new LibraryItemSnapshotViewModel(replacementSnapshot);
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 var existingIndex = Results
@@ -522,9 +521,15 @@ public sealed class MainWindowViewModel : ViewModelBase
                             StringComparison.OrdinalIgnoreCase))
                     ?.index;
                 if (existingIndex.HasValue)
-                    Results[existingIndex.Value] = replacement;
+                    Results[existingIndex.Value].UpdateFromSnapshot(replacementSnapshot);
+                else if (SelectedResult != null &&
+                         string.Equals(
+                             CatalogTitleKey.Create(SelectedResult.Snapshot.Title.Kind, SelectedResult.Snapshot.Title.Identifiers),
+                             detailedCatalogKey,
+                             StringComparison.OrdinalIgnoreCase))
+                    SelectedResult.UpdateFromSnapshot(replacementSnapshot);
 
-                SelectedResult = replacement;
+                _ = LoadSelectedPosterAsync();
             });
             Logger.Instance.Info($"Updated cached details for '{detailedSnapshot.Title.Name}'.");
         }

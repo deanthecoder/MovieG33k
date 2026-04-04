@@ -125,10 +125,12 @@ public sealed class MainWindowViewModelTests
             new FakeDialogService());
 
         await viewModel.RefreshAsync();
-        viewModel.SelectedResult = viewModel.Results[0];
+        var selectedResult = viewModel.Results[0];
+        viewModel.SelectedResult = selectedResult;
 
         await WaitForAsync(() => viewModel.HasSelectedRuntime);
 
+        Assert.That(viewModel.SelectedResult, Is.SameAs(selectedResult));
         Assert.That(viewModel.SelectedResult.SourceLabel, Is.EqualTo("Search hit"));
     }
 

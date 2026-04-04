@@ -10,6 +10,7 @@
 
 using System.IO;
 using System.Linq;
+using DTC.Core.ViewModels;
 using MovieG33k.Core.Models;
 
 namespace MovieG33k.ViewModels;
@@ -20,14 +21,126 @@ namespace MovieG33k.ViewModels;
 /// <remarks>
 /// The shell can bind to presentation-friendly strings without pushing formatting logic back into the domain types.
 /// </remarks>
-public sealed class LibraryItemSnapshotViewModel
+public sealed class LibraryItemSnapshotViewModel : ViewModelBase
 {
+    private LibraryItemSnapshot m_snapshot;
+    private string m_title;
+    private string m_subtitle;
+    private string m_sourceLabel;
+    private string m_badgeText;
+    private string m_overview;
+    private string m_personalState;
+    private bool m_hasPersonalState;
+    private string m_providerText;
+    private string m_posterUrl;
+
     /// <summary>
     /// Creates a new row view model.
     /// </summary>
     public LibraryItemSnapshotViewModel(LibraryItemSnapshot snapshot)
     {
-        Snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+        UpdateFromSnapshot(snapshot);
+    }
+
+    /// <summary>
+    /// Gets the underlying snapshot.
+    /// </summary>
+    public LibraryItemSnapshot Snapshot
+    {
+        get => m_snapshot;
+        private set => SetField(ref m_snapshot, value);
+    }
+
+    /// <summary>
+    /// Gets the row title.
+    /// </summary>
+    public string Title
+    {
+        get => m_title;
+        private set => SetField(ref m_title, value);
+    }
+
+    /// <summary>
+    /// Gets the row subtitle.
+    /// </summary>
+    public string Subtitle
+    {
+        get => m_subtitle;
+        private set => SetField(ref m_subtitle, value);
+    }
+
+    /// <summary>
+    /// Gets the row source label.
+    /// </summary>
+    public string SourceLabel
+    {
+        get => m_sourceLabel;
+        private set => SetField(ref m_sourceLabel, value);
+    }
+
+    /// <summary>
+    /// Gets the compact badge text shown on the row.
+    /// </summary>
+    public string BadgeText
+    {
+        get => m_badgeText;
+        private set => SetField(ref m_badgeText, value);
+    }
+
+    /// <summary>
+    /// Gets the detail overview text.
+    /// </summary>
+    public string Overview
+    {
+        get => m_overview;
+        private set => SetField(ref m_overview, value);
+    }
+
+    /// <summary>
+    /// Gets the personal state summary.
+    /// </summary>
+    public string PersonalState
+    {
+        get => m_personalState;
+        private set => SetField(ref m_personalState, value);
+    }
+
+    /// <summary>
+    /// Gets whether there is personal state worth showing in list rows.
+    /// </summary>
+    public bool HasPersonalState
+    {
+        get => m_hasPersonalState;
+        private set => SetField(ref m_hasPersonalState, value);
+    }
+
+    /// <summary>
+    /// Gets the provider summary text.
+    /// </summary>
+    public string ProviderText
+    {
+        get => m_providerText;
+        private set => SetField(ref m_providerText, value);
+    }
+
+    /// <summary>
+    /// Gets the full poster URL when available.
+    /// </summary>
+    public string PosterUrl
+    {
+        get => m_posterUrl;
+        private set => SetField(ref m_posterUrl, value);
+    }
+
+    /// <summary>
+    /// Updates the row in place so list selection and keyboard focus can stay stable.
+    /// </summary>
+    public void UpdateFromSnapshot(LibraryItemSnapshot snapshot)
+    {
+        if (snapshot == null)
+            throw new ArgumentNullException(nameof(snapshot));
+
+        Snapshot = snapshot;
         Title = snapshot.Title.Name ?? "Untitled";
         Subtitle = BuildSubtitle(snapshot);
         SourceLabel = snapshot.SourceLabel ?? "TMDb";
@@ -42,56 +155,6 @@ public sealed class LibraryItemSnapshotViewModel
             : "Streaming availability will show up here when provider support is added.";
         PosterUrl = BuildPosterUrl(snapshot.Title.PosterPath);
     }
-
-    /// <summary>
-    /// Gets the underlying snapshot.
-    /// </summary>
-    public LibraryItemSnapshot Snapshot { get; }
-
-    /// <summary>
-    /// Gets the row title.
-    /// </summary>
-    public string Title { get; }
-
-    /// <summary>
-    /// Gets the row subtitle.
-    /// </summary>
-    public string Subtitle { get; }
-
-    /// <summary>
-    /// Gets the row source label.
-    /// </summary>
-    public string SourceLabel { get; }
-
-    /// <summary>
-    /// Gets the compact badge text shown on the row.
-    /// </summary>
-    public string BadgeText { get; }
-
-    /// <summary>
-    /// Gets the detail overview text.
-    /// </summary>
-    public string Overview { get; }
-
-    /// <summary>
-    /// Gets the personal state summary.
-    /// </summary>
-    public string PersonalState { get; }
-
-    /// <summary>
-    /// Gets whether there is personal state worth showing in list rows.
-    /// </summary>
-    public bool HasPersonalState { get; }
-
-    /// <summary>
-    /// Gets the provider summary text.
-    /// </summary>
-    public string ProviderText { get; }
-
-    /// <summary>
-    /// Gets the full poster URL when available.
-    /// </summary>
-    public string PosterUrl { get; }
 
     private static string BuildSubtitle(LibraryItemSnapshot snapshot)
     {
