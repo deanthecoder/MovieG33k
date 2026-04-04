@@ -33,7 +33,7 @@ namespace MovieG33k.ViewModels;
 /// </remarks>
 public sealed class MainWindowViewModel : ViewModelBase
 {
-    private const int InitialResultLimit = 50;
+    private const int InitialResultLimit = 100;
     private const int ResultLimitIncrement = 50;
 
     private enum LibraryViewMode

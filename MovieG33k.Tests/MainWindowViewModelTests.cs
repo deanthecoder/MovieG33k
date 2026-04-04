@@ -87,11 +87,6 @@ public sealed class MainWindowViewModelTests
 
         await viewModel.RefreshAsync();
 
-        Assert.That(viewModel.Results, Has.Count.EqualTo(50));
-        Assert.That(viewModel.CanLoadMore, Is.True);
-
-        await viewModel.LoadMoreAsync();
-
         Assert.That(viewModel.Results, Has.Count.EqualTo(100));
         Assert.That(viewModel.CanLoadMore, Is.True);
 
