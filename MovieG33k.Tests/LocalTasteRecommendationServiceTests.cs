@@ -58,6 +58,43 @@ public sealed class LocalTasteRecommendationServiceTests
         Assert.That(results.Select(result => result.Title.Name).ToArray(), Is.EqualTo(new[] { "Alien" }));
     }
 
+    [Test]
+    public async Task GetRecommendationsAsyncLetsGenreFilterRestrictTheResults()
+    {
+        var alien = new MovieEntry(new TitleIdentifiers(348, "tt0078748"), "Alien", "Alien", "One", new DateOnly(1979, 5, 25), null, null, ["Science Fiction", "Horror"], "en", 117, 8.5m);
+        var robocop = new MovieEntry(new TitleIdentifiers(5548, "tt0093870"), "RoboCop", "RoboCop", "Two", new DateOnly(1987, 7, 17), null, null, ["Action", "Science Fiction"], "en", 102, 7.4m);
+        var repository = new FakeLibraryRepository(
+            ratedInsights:
+            [
+                new RatedTitleInsight("movie:1", "Aliens", 10, 1986, ["Science Fiction", "Action"])
+            ]);
+        var tmdbClient = new FakeTmdbMetadataClient([alien, robocop]);
+        var service = new LocalTasteRecommendationService(repository, tmdbClient);
+
+        var results = await service.GetRecommendationsAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB", 20, GenreFilter: "Horror"));
+
+        Assert.That(results.Select(result => result.Title.Name).ToArray(), Is.EqualTo(new[] { "Alien" }));
+    }
+
+    [Test]
+    public async Task GetRecommendationsAsyncLetsAgeRatingRangeRestrictTheResults()
+    {
+        var alien = new MovieEntry(new TitleIdentifiers(348, "tt0078748"), "Alien", "Alien", "One", new DateOnly(1979, 5, 25), null, null, ["Science Fiction", "Horror"], "en", 117, 8.5m, "18");
+        var robocop = new MovieEntry(new TitleIdentifiers(5548, "tt0093870"), "RoboCop", "RoboCop", "Two", new DateOnly(1987, 7, 17), null, null, ["Action", "Science Fiction"], "en", 102, 7.4m, "15");
+        var paddington = new MovieEntry(new TitleIdentifiers(116149, "tt1109624"), "Paddington", "Paddington", "Three", new DateOnly(2014, 11, 28), null, null, ["Comedy", "Family"], "en", 95, 7.2m, "PG");
+        var repository = new FakeLibraryRepository(
+            ratedInsights:
+            [
+                new RatedTitleInsight("movie:1", "Aliens", 10, 1986, ["Science Fiction", "Action"])
+            ]);
+        var tmdbClient = new FakeTmdbMetadataClient([alien, robocop, paddington]);
+        var service = new LocalTasteRecommendationService(repository, tmdbClient);
+
+        var results = await service.GetRecommendationsAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB", 20, AgeRatingFilter: "15+"));
+
+        Assert.That(results.Select(result => result.Title.Name).ToArray(), Is.EquivalentTo(new[] { "Alien", "RoboCop" }));
+    }
+
     private sealed class FakeLibraryRepository : ILibraryRepository
     {
         private readonly IReadOnlyList<RatedTitleInsight> m_ratedInsights;
@@ -114,7 +151,7 @@ public sealed class LocalTasteRecommendationServiceTests
         public string RegionCode => "GB";
         public Task<IReadOnlyList<CatalogTitle>> SearchAsync(DiscoveryQuery query, CancellationToken cancellationToken = default) => Task.FromResult(m_results);
         public Task<IReadOnlyList<CatalogTitle>> GetTrendingAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<CatalogTitle>>(m_results.Where(result => result.Kind == kind).Take(maxResults).ToArray());
-        public Task<IReadOnlyList<CatalogTitle>> GetDiscoverAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<CatalogTitle>>(m_results.Where(result => result.Kind == kind).Take(maxResults).ToArray());
+        public Task<IReadOnlyList<CatalogTitle>> GetDiscoverAsync(DiscoveryQuery query, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<CatalogTitle>>(m_results.Where(result => result.Kind == query.Kind).Take(query.MaxResults).ToArray());
         public Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default) => Task.FromResult(m_results.FirstOrDefault());
         public Task<CatalogTitle> ResolveImdbIdAsync(string imdbId, TitleKind kind, CancellationToken cancellationToken = default) => Task.FromResult(m_results.FirstOrDefault());
     }

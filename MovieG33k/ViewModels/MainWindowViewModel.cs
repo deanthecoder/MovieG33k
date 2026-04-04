@@ -39,6 +39,24 @@ public sealed class MainWindowViewModel : ViewModelBase
 {
     private const int InitialResultLimit = 100;
     private const int ResultLimitIncrement = 50;
+    private static readonly RecommendationFilterOption AnyGenreOption = new("Any genre", null);
+    private static readonly IReadOnlyList<string> MovieGenres =
+    [
+        "Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History",
+        "Horror", "Music", "Mystery", "Romance", "Science Fiction", "TV Movie", "Thriller", "War", "Western"
+    ];
+    private static readonly IReadOnlyList<string> TvGenres =
+    [
+        "Action & Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Kids", "Mystery",
+        "News", "Reality", "Sci-Fi & Fantasy", "Soap", "Talk", "War & Politics", "Western"
+    ];
+    private static readonly IReadOnlyList<RecommendationFilterOption> MovieAgeRatingOptions =
+    [
+        new("Any age rating", null),
+        new("12+", "12+"),
+        new("15+", "15+"),
+        new("18+", "18+")
+    ];
 
     private enum LibraryViewMode
     {
@@ -68,6 +86,10 @@ public sealed class MainWindowViewModel : ViewModelBase
     private LibraryViewMode m_currentMode;
     private int m_resultLimit = InitialResultLimit;
     private IImage m_selectedPoster;
+    private IReadOnlyList<RecommendationFilterOption> m_recommendationGenreOptions;
+    private IReadOnlyList<RecommendationFilterOption> m_recommendationAgeRatingOptions;
+    private RecommendationFilterOption m_selectedRecommendationGenreOption;
+    private RecommendationFilterOption m_selectedRecommendationAgeRatingOption;
     private CancellationTokenSource m_refreshCancellationTokenSource;
     private CancellationTokenSource m_posterCancellationTokenSource;
     private CancellationTokenSource m_selectedDetailsCancellationTokenSource;
@@ -102,6 +124,10 @@ public sealed class MainWindowViewModel : ViewModelBase
         RatingDistribution = new ObservableCollection<InsightsBarViewModel>();
         RatingByDecade = new ObservableCollection<InsightsBarViewModel>();
         RatingByGenre = new ObservableCollection<InsightsBarViewModel>();
+        m_recommendationGenreOptions = BuildGenreOptions(m_selectedKind.Kind);
+        m_recommendationAgeRatingOptions = BuildAgeRatingOptions(m_selectedKind.Kind);
+        m_selectedRecommendationGenreOption = m_recommendationGenreOptions[0];
+        m_selectedRecommendationAgeRatingOption = m_recommendationAgeRatingOptions[0];
 
         ShowDiscoverCommand = new RelayCommand(_ => CurrentMode = LibraryViewMode.Discover);
         ShowRecommendedCommand = new RelayCommand(_ => CurrentMode = LibraryViewMode.Recommended);
@@ -163,6 +189,42 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public ObservableCollection<InsightsBarViewModel> RatingByGenre { get; }
 
+    public IReadOnlyList<RecommendationFilterOption> RecommendationGenreOptions
+    {
+        get => m_recommendationGenreOptions;
+        private set => SetField(ref m_recommendationGenreOptions, value);
+    }
+
+    public IReadOnlyList<RecommendationFilterOption> RecommendationAgeRatingOptions
+    {
+        get => m_recommendationAgeRatingOptions;
+        private set => SetField(ref m_recommendationAgeRatingOptions, value);
+    }
+
+    public RecommendationFilterOption SelectedRecommendationGenreOption
+    {
+        get => m_selectedRecommendationGenreOption;
+        set
+        {
+            if (!SetField(ref m_selectedRecommendationGenreOption, value))
+                return;
+
+            ResetResultLimitAndRefresh();
+        }
+    }
+
+    public RecommendationFilterOption SelectedRecommendationAgeRatingOption
+    {
+        get => m_selectedRecommendationAgeRatingOption;
+        set
+        {
+            if (!SetField(ref m_selectedRecommendationAgeRatingOption, value))
+                return;
+
+            ResetResultLimitAndRefresh();
+        }
+    }
+
     public string SearchText
     {
         get => m_searchText;
@@ -183,6 +245,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             if (!SetField(ref m_selectedKind, value))
                 return;
 
+            UpdateRecommendationFilterOptions();
             ResetResultLimitAndRefresh();
         }
     }
@@ -290,6 +353,10 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public bool IsInsightsMode => CurrentMode == LibraryViewMode.Insights;
 
+    public bool HasRecommendationFilters => IsRecommendedMode;
+
+    public bool HasRecommendationAgeRatingFilter => IsRecommendedMode && SelectedKind?.Kind == TitleKind.Movie;
+
     private LibraryViewMode CurrentMode
     {
         get => m_currentMode;
@@ -304,6 +371,8 @@ public sealed class MainWindowViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsWatchlistMode));
             OnPropertyChanged(nameof(IsWatchedMode));
             OnPropertyChanged(nameof(IsInsightsMode));
+            OnPropertyChanged(nameof(HasRecommendationFilters));
+            OnPropertyChanged(nameof(HasRecommendationAgeRatingFilter));
             OnPropertyChanged(nameof(SearchWatermark));
             OnPropertyChanged(nameof(ResultsHeading));
 
@@ -541,7 +610,13 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private async Task RefreshRecommendationsAsync(CancellationToken cancellationToken, string selectedCatalogKey, int selectedResultIndex)
     {
-        var query = new DiscoveryQuery(SearchText, SelectedKind.Kind, m_regionCode, m_resultLimit);
+        var query = new DiscoveryQuery(
+            SearchText,
+            SelectedKind.Kind,
+            m_regionCode,
+            m_resultLimit,
+            SelectedRecommendationGenreOption?.Value,
+            HasRecommendationAgeRatingFilter ? SelectedRecommendationAgeRatingOption?.Value : null);
         var candidates = await m_recommendationService.GetRecommendationsAsync(query, cancellationToken);
         if (cancellationToken.IsCancellationRequested)
             return;
@@ -556,8 +631,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         StatusText =
             candidates.Count == 0
                 ? string.IsNullOrWhiteSpace(query.Query)
-                    ? $"No {mediaType} to recommend yet. Rate more titles to build your taste profile."
-                    : $"No recommended {mediaType} matched \"{query.Query}\"."
+                    ? $"No {mediaType} matched the current recommendation filters yet."
+                    : $"No recommended {mediaType} matched \"{query.Query}\" and the current filters."
                 : string.IsNullOrWhiteSpace(query.Query)
                     ? $"Recommended {mediaType} based on your ratings."
                     : $"Recommended {mediaType} matching \"{query.Query}\".";
@@ -664,6 +739,35 @@ public sealed class MainWindowViewModel : ViewModelBase
         CanLoadMore = false;
         _ = RefreshResultsAsync();
     }
+
+    private void UpdateRecommendationFilterOptions()
+    {
+        RecommendationGenreOptions = BuildGenreOptions(SelectedKind.Kind);
+        RecommendationAgeRatingOptions = BuildAgeRatingOptions(SelectedKind.Kind);
+
+        m_selectedRecommendationGenreOption = RecommendationGenreOptions
+            .FirstOrDefault(option => string.Equals(option.Value, m_selectedRecommendationGenreOption?.Value, StringComparison.OrdinalIgnoreCase))
+            ?? RecommendationGenreOptions[0];
+        m_selectedRecommendationAgeRatingOption = RecommendationAgeRatingOptions
+            .FirstOrDefault(option => string.Equals(option.Value, m_selectedRecommendationAgeRatingOption?.Value, StringComparison.OrdinalIgnoreCase))
+            ?? RecommendationAgeRatingOptions[0];
+
+        OnPropertyChanged(nameof(RecommendationGenreOptions));
+        OnPropertyChanged(nameof(RecommendationAgeRatingOptions));
+        OnPropertyChanged(nameof(SelectedRecommendationGenreOption));
+        OnPropertyChanged(nameof(SelectedRecommendationAgeRatingOption));
+        OnPropertyChanged(nameof(HasRecommendationAgeRatingFilter));
+    }
+
+    private static IReadOnlyList<RecommendationFilterOption> BuildGenreOptions(TitleKind kind) =>
+        new[] { AnyGenreOption }
+            .Concat((kind == TitleKind.Movie ? MovieGenres : TvGenres).Select(genre => new RecommendationFilterOption(genre, genre)))
+            .ToArray();
+
+    private static IReadOnlyList<RecommendationFilterOption> BuildAgeRatingOptions(TitleKind kind) =>
+        kind == TitleKind.Movie
+            ? MovieAgeRatingOptions
+            : [new RecommendationFilterOption("Any age rating", null)];
 
     private async Task LoadMoreResultsAsync()
     {

@@ -40,7 +40,7 @@
 
     <dialogHostAvalonia:DialogHost OverlayBackground="#AA02070D">
       <Grid Margin="28"
-            RowDefinitions="Auto,Auto,Auto,*">
+            RowDefinitions="Auto,Auto,Auto,Auto,*">
         <Grid ColumnDefinitions="*,Auto"
               Margin="0,8,0,18">
           <StackPanel Spacing="8">
@@ -189,7 +189,38 @@
             </Grid>
         </Border>
 
-        <StackPanel Grid.Row="2"
+        <Border Grid.Row="2"
+                Margin="0,0,0,12"
+                Classes="searchSurface"
+                IsVisible="{Binding HasRecommendationFilters}">
+          <Grid ColumnDefinitions="Auto,Auto,*">
+            <ComboBox MinWidth="180"
+                      Margin="0,0,10,0"
+                      ItemsSource="{Binding RecommendationGenreOptions}"
+                      SelectedItem="{Binding SelectedRecommendationGenreOption, Mode=TwoWay}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="viewModels:RecommendationFilterOption">
+                  <TextBlock Text="{Binding DisplayName}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+
+            <ComboBox Grid.Column="1"
+                      MinWidth="160"
+                      Margin="0,0,10,0"
+                      IsVisible="{Binding HasRecommendationAgeRatingFilter}"
+                      ItemsSource="{Binding RecommendationAgeRatingOptions}"
+                      SelectedItem="{Binding SelectedRecommendationAgeRatingOption, Mode=TwoWay}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="viewModels:RecommendationFilterOption">
+                  <TextBlock Text="{Binding DisplayName}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+        </Border>
+
+        <StackPanel Grid.Row="3"
                     Margin="0,0,0,12"
                     Spacing="4">
           <TextBlock Classes="launcherEyebrow"
@@ -199,7 +230,7 @@
                      Text="{Binding StatusText}" />
         </StackPanel>
 
-        <Grid Grid.Row="3"
+        <Grid Grid.Row="4"
               IsVisible="{Binding !IsInsightsMode}"
               ColumnDefinitions="0.9*,1.1*">
           <Border Classes="resultsPanel">
@@ -284,10 +315,14 @@
                                FontSize="12"
                                Text="MOVIE DETAILS" />
                     <Grid ColumnDefinitions="*,Auto">
-                      <TextBlock Classes="launcherTitle"
-                                 FontSize="30"
-                                 Text="{Binding SelectedTitle}"
-                                 TextWrapping="Wrap" />
+                      <TextBox Classes="launcherTitle"
+                               FontSize="30"
+                               Background="Transparent"
+                               BorderThickness="0"
+                               IsReadOnly="True"
+                               AcceptsReturn="True"
+                               TextWrapping="Wrap"
+                               Text="{Binding SelectedTitle}" />
                       <Button Grid.Column="1"
                               Classes="neon"
                               Margin="10,0,0,0"
@@ -393,7 +428,7 @@
           </ScrollViewer>
         </Grid>
 
-        <ScrollViewer Grid.Row="3"
+        <ScrollViewer Grid.Row="4"
                       IsVisible="{Binding IsInsightsMode}"
                       VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled">

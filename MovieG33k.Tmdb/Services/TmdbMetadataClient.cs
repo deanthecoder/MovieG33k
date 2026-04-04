@@ -27,6 +27,49 @@ namespace MovieG33k.Tmdb.Services;
 /// </remarks>
 public sealed class TmdbMetadataClient : ITmdbMetadataClient
 {
+    private static readonly IReadOnlyDictionary<int, string> MovieGenres = new Dictionary<int, string>
+    {
+        [28] = "Action",
+        [12] = "Adventure",
+        [16] = "Animation",
+        [35] = "Comedy",
+        [80] = "Crime",
+        [99] = "Documentary",
+        [18] = "Drama",
+        [10751] = "Family",
+        [14] = "Fantasy",
+        [36] = "History",
+        [27] = "Horror",
+        [10402] = "Music",
+        [9648] = "Mystery",
+        [10749] = "Romance",
+        [878] = "Science Fiction",
+        [10770] = "TV Movie",
+        [53] = "Thriller",
+        [10752] = "War",
+        [37] = "Western"
+    };
+
+    private static readonly IReadOnlyDictionary<int, string> TvGenres = new Dictionary<int, string>
+    {
+        [10759] = "Action & Adventure",
+        [16] = "Animation",
+        [35] = "Comedy",
+        [80] = "Crime",
+        [99] = "Documentary",
+        [18] = "Drama",
+        [10751] = "Family",
+        [10762] = "Kids",
+        [9648] = "Mystery",
+        [10763] = "News",
+        [10764] = "Reality",
+        [10765] = "Sci-Fi & Fantasy",
+        [10766] = "Soap",
+        [10767] = "Talk",
+        [10768] = "War & Politics",
+        [37] = "Western"
+    };
+
     private readonly HttpClient m_httpClient;
     private readonly TmdbOptions m_options;
 
@@ -108,35 +151,59 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<CatalogTitle>> GetDiscoverAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<CatalogTitle>> GetDiscoverAsync(DiscoveryQuery query, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(query);
+
         if (!IsConfigured)
         {
-            Logger.Instance.Warn($"TMDb discover lookup for {kind} is using stub results because no TMDb credential is configured.");
-            return GetStubTrendingResults(kind, maxResults);
+            Logger.Instance.Warn($"TMDb discover lookup for {query.Kind} is using stub results because no TMDb credential is configured.");
+            return GetStubTrendingResults(query.Kind, query.MaxResults);
         }
 
-        Logger.Instance.Info($"Loading TMDb discover {kind} titles (max {maxResults}).");
+        Logger.Instance.Info(
+            $"Loading TMDb discover {query.Kind} titles (max {query.MaxResults}, genre '{query.GenreFilter ?? "<any>"}', age '{query.AgeRatingFilter ?? "<any>"}').");
 
-        var path = kind == TitleKind.Movie ? "/3/discover/movie" : "/3/discover/tv";
-        var results = await SendAndMapPagedAsync(
+        var path = query.Kind == TitleKind.Movie ? "/3/discover/movie" : "/3/discover/tv";
+        var baseQueryParameters = new Dictionary<string, string>
+        {
+            ["language"] = m_options.Language,
+            ["include_adult"] = "false",
+            ["watch_region"] = m_options.RegionCode
+        };
+
+        if (TryGetGenreId(query.GenreFilter, query.Kind, out var genreId))
+            baseQueryParameters["with_genres"] = genreId.ToString(CultureInfo.InvariantCulture);
+
+        var qualityQueryParameters = new Dictionary<string, string>(baseQueryParameters)
+        {
+            ["sort_by"] = "vote_average.desc",
+            ["vote_count.gte"] = query.Kind == TitleKind.Movie ? "1500" : "300"
+        };
+        var popularQueryParameters = new Dictionary<string, string>(baseQueryParameters)
+        {
+            ["sort_by"] = "popularity.desc",
+            ["vote_count.gte"] = query.Kind == TitleKind.Movie ? "400" : "150"
+        };
+
+        var qualityResults = await SendAndMapPagedAsync(
             path,
-            kind,
-            maxResults,
-            new Dictionary<string, string>
-            {
-                ["language"] = m_options.Language,
-                ["include_adult"] = "false",
-                ["sort_by"] = "popularity.desc",
-                ["vote_count.gte"] = "200",
-                ["watch_region"] = m_options.RegionCode
-            },
+            query.Kind,
+            query.MaxResults,
+            qualityQueryParameters,
             cancellationToken);
+        var popularResults = await SendAndMapPagedAsync(
+            path,
+            query.Kind,
+            query.MaxResults,
+            popularQueryParameters,
+            cancellationToken);
+        var results = MergeDiscoveredTitles(qualityResults, popularResults, query.MaxResults);
         if (results != null)
             return results;
 
-        Logger.Instance.Warn($"TMDb discover lookup failed for {kind}. Falling back to trending results.");
-        return await GetTrendingAsync(kind, maxResults, cancellationToken);
+        Logger.Instance.Warn($"TMDb discover lookup failed for {query.Kind}. Falling back to trending results.");
+        return await GetTrendingAsync(query.Kind, query.MaxResults, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -341,6 +408,31 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
         return collectedResults;
     }
 
+    private static IReadOnlyList<CatalogTitle> MergeDiscoveredTitles(
+        IReadOnlyList<CatalogTitle> primaryResults,
+        IReadOnlyList<CatalogTitle> secondaryResults,
+        int maxResults)
+    {
+        if (primaryResults == null && secondaryResults == null)
+            return null;
+
+        var mergedResults = new List<CatalogTitle>(Math.Max(0, maxResults));
+        var seenCatalogKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var title in (primaryResults ?? Array.Empty<CatalogTitle>()).Concat(secondaryResults ?? Array.Empty<CatalogTitle>()))
+        {
+            var catalogKey = CatalogTitleKey.Create(title.Kind, title.Identifiers);
+            if (!seenCatalogKeys.Add(catalogKey))
+                continue;
+
+            mergedResults.Add(title);
+            if (mergedResults.Count >= maxResults)
+                break;
+        }
+
+        return mergedResults;
+    }
+
     private string BuildRequestUri(string path, IReadOnlyDictionary<string, string> values)
     {
         var queryValues = new Dictionary<string, string>(values)
@@ -381,7 +473,7 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             ? parsedDate
             : null;
 
-        var genres = GetGenres(element);
+        var genres = GetGenres(element, kind);
         if (kind == TitleKind.Movie)
         {
             return new MovieEntry(
@@ -486,16 +578,45 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
         };
     }
 
-    private static IReadOnlyList<string> GetGenres(JsonElement element)
+    private static IReadOnlyList<string> GetGenres(JsonElement element, TitleKind kind)
     {
-        if (!element.TryGetProperty("genres", out var genresElement) || genresElement.ValueKind != JsonValueKind.Array)
+        if (element.TryGetProperty("genres", out var genresElement) && genresElement.ValueKind == JsonValueKind.Array)
+        {
+            return genresElement
+                .EnumerateArray()
+                .Select(genreElement => genreElement.TryGetProperty("name", out var nameElement) ? nameElement.GetString() : null)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .ToArray();
+        }
+
+        if (!element.TryGetProperty("genre_ids", out var genreIdsElement) || genreIdsElement.ValueKind != JsonValueKind.Array)
             return Array.Empty<string>();
 
-        return genresElement
+        var genreLookup = kind == TitleKind.Movie ? MovieGenres : TvGenres;
+        return genreIdsElement
             .EnumerateArray()
-            .Select(genreElement => genreElement.TryGetProperty("name", out var nameElement) ? nameElement.GetString() : null)
+            .Select(genreIdElement => genreIdElement.TryGetInt32(out var genreId) && genreLookup.TryGetValue(genreId, out var genreName) ? genreName : null)
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .ToArray();
+    }
+
+    private static bool TryGetGenreId(string genreName, TitleKind kind, out int genreId)
+    {
+        genreId = 0;
+        if (string.IsNullOrWhiteSpace(genreName))
+            return false;
+
+        var genreLookup = kind == TitleKind.Movie ? MovieGenres : TvGenres;
+        foreach (var pair in genreLookup)
+        {
+            if (!string.Equals(pair.Value, genreName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            genreId = pair.Key;
+            return true;
+        }
+
+        return false;
     }
 
     private static int? TryGetRuntimeMinutes(JsonElement element)

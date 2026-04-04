@@ -17,7 +17,9 @@ namespace MovieG33k.Core.Services;
 /// </summary>
 public sealed class LocalTasteRecommendationService : IRecommendationService
 {
-    private const int CandidatePoolSize = 80;
+    private const int CandidatePoolSize = 120;
+    private const int AgeRatingEnrichmentLimit = 80;
+    private const int AgeRatingEnrichmentParallelism = 6;
     private readonly ILibraryRepository m_libraryRepository;
     private readonly ITmdbMetadataClient m_tmdbMetadataClient;
 
@@ -46,7 +48,13 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
         var genreAffinity = BuildGenreAffinity(ratedTitles);
         var decadeAffinity = BuildDecadeAffinity(ratedTitles);
 
-        var remoteCandidates = await m_tmdbMetadataClient.GetDiscoverAsync(query.Kind, Math.Max(query.MaxResults * 3, CandidatePoolSize), cancellationToken);
+        var candidateQuery = query with
+        {
+            MaxResults = Math.Max(
+                query.MaxResults * (HasDiscoveryFilters(query) ? 4 : 2),
+                CandidatePoolSize)
+        };
+        var remoteCandidates = await m_tmdbMetadataClient.GetDiscoverAsync(candidateQuery, cancellationToken);
         if (remoteCandidates.Count == 0)
             return Array.Empty<RecommendationCandidate>();
 
@@ -56,7 +64,7 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
             remoteCandidates.Select(title => CatalogTitleKey.Create(title.Kind, title.Identifiers)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             cancellationToken);
 
-        var filteredResults = remoteCandidates
+        IReadOnlyList<LibraryItemSnapshot> snapshots = remoteCandidates
             .Select(title =>
             {
                 var key = CatalogTitleKey.Create(title.Kind, title.Identifiers);
@@ -64,8 +72,16 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
                     ? snapshot
                     : new LibraryItemSnapshot(title);
             })
+            .ToArray();
+
+        if (ShouldEnrichAgeRatings(query))
+            snapshots = await EnrichMissingMovieAgeRatingsAsync(snapshots, cancellationToken);
+
+        var filteredResults = snapshots
             .Where(snapshot => !HasUserAlreadyHandled(snapshot))
             .Where(snapshot => MatchesQuery(snapshot.Title, query.Query))
+            .Where(snapshot => MatchesGenreFilter(snapshot.Title, query.GenreFilter))
+            .Where(snapshot => MatchesAgeRatingFilter(snapshot.Title, query.AgeRatingFilter))
             .Select(snapshot => ScoreCandidate(snapshot, genreAffinity, decadeAffinity))
             .Where(candidate => candidate != null)
             .OrderByDescending(candidate => candidate.Score)
@@ -111,6 +127,112 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
         return title.Name?.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase) == true ||
                title.OriginalName?.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase) == true ||
                title.Genres?.Any(genre => genre.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase)) == true;
+    }
+
+    private static bool MatchesGenreFilter(CatalogTitle title, string genreFilter) =>
+        string.IsNullOrWhiteSpace(genreFilter) ||
+        title.Genres?.Any(genre => string.Equals(genre, genreFilter, StringComparison.OrdinalIgnoreCase)) == true;
+
+    private static bool MatchesAgeRatingFilter(CatalogTitle title, string ageRatingFilter)
+    {
+        if (string.IsNullOrWhiteSpace(ageRatingFilter))
+            return true;
+
+        var minimumAgeRank = GetMinimumAgeRank(ageRatingFilter);
+        var titleAgeRank = GetAgeRatingRank(title.AgeRating);
+        return titleAgeRank.HasValue && titleAgeRank.Value >= minimumAgeRank;
+    }
+
+    private static bool HasDiscoveryFilters(DiscoveryQuery query) =>
+        !string.IsNullOrWhiteSpace(query.GenreFilter) ||
+        !string.IsNullOrWhiteSpace(query.AgeRatingFilter);
+
+    private static bool ShouldEnrichAgeRatings(DiscoveryQuery query) =>
+        query.Kind == TitleKind.Movie &&
+        !string.IsNullOrWhiteSpace(query.AgeRatingFilter);
+
+    private async Task<IReadOnlyList<LibraryItemSnapshot>> EnrichMissingMovieAgeRatingsAsync(
+        IReadOnlyList<LibraryItemSnapshot> snapshots,
+        CancellationToken cancellationToken)
+    {
+        var snapshotsToEnrich = snapshots
+            .Where(snapshot => string.IsNullOrWhiteSpace(snapshot.Title.AgeRating))
+            .Take(AgeRatingEnrichmentLimit)
+            .ToArray();
+        if (snapshotsToEnrich.Length == 0)
+            return snapshots;
+
+        var semaphore = new SemaphoreSlim(AgeRatingEnrichmentParallelism);
+        var enrichedTitles = new Dictionary<string, CatalogTitle>(StringComparer.OrdinalIgnoreCase);
+
+        await Task.WhenAll(snapshotsToEnrich.Select(async snapshot =>
+        {
+            await semaphore.WaitAsync(cancellationToken);
+            try
+            {
+                var detailedTitle = await m_tmdbMetadataClient.GetTitleDetailsAsync(snapshot.Title.Identifiers, snapshot.Title.Kind, cancellationToken);
+                if (detailedTitle == null)
+                    return;
+
+                lock (enrichedTitles)
+                {
+                    enrichedTitles[CatalogTitleKey.Create(detailedTitle.Kind, detailedTitle.Identifiers)] = detailedTitle;
+                }
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        }));
+
+        if (enrichedTitles.Count == 0)
+            return snapshots;
+
+        await m_libraryRepository.UpsertTitlesAsync(enrichedTitles.Values.ToArray(), cancellationToken);
+
+        return snapshots
+            .Select(snapshot =>
+            {
+                var catalogKey = CatalogTitleKey.Create(snapshot.Title.Kind, snapshot.Title.Identifiers);
+                return enrichedTitles.TryGetValue(catalogKey, out var detailedTitle)
+                    ? snapshot with { Title = detailedTitle }
+                    : snapshot;
+            })
+            .ToArray();
+    }
+
+    private static int GetMinimumAgeRank(string ageRatingFilter) =>
+        ageRatingFilter switch
+        {
+            "12+" => 2,
+            "15+" => 3,
+            "18+" => 4,
+            _ => 0
+        };
+
+    private static int? GetAgeRatingRank(string ageRating)
+    {
+        if (string.IsNullOrWhiteSpace(ageRating))
+            return null;
+
+        var normalized = ageRating.Trim().ToUpperInvariant();
+        return normalized switch
+        {
+            "U" or "G" or "TV-G" or "TV-Y" or "TV-Y7" => 0,
+            "PG" or "TV-PG" => 1,
+            "12" or "12A" or "PG-13" or "TV-14" => 2,
+            "15" or "R" or "MA15+" or "TV-MA" => 3,
+            "18" or "NC-17" => 4,
+            _ when int.TryParse(new string(normalized.TakeWhile(char.IsDigit).ToArray()), out var numericAge) => numericAge switch
+            {
+                >= 18 => 4,
+                >= 15 => 3,
+                >= 12 => 2,
+                >= 0 => 1,
+                _ => 1
+            },
+            _ => null
+        };
     }
 
     private static RecommendationCandidate ScoreCandidate(

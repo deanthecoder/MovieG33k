@@ -43,7 +43,7 @@ public interface ITmdbMetadataClient
     /// <summary>
     /// Returns a steadier discovery pool suitable for recommendations and future filters.
     /// </summary>
-    Task<IReadOnlyList<CatalogTitle>> GetDiscoverAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CatalogTitle>> GetDiscoverAsync(DiscoveryQuery query, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Loads richer metadata for a known title when available.

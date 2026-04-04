@@ -8,18 +8,9 @@
 //
 // THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND.
 
-namespace MovieG33k.Core.Models;
+namespace MovieG33k.ViewModels;
 
 /// <summary>
-/// Describes a discovery or search request.
+/// Represents a compact recommendation filter choice in the UI.
 /// </summary>
-/// <remarks>
-/// One query type keeps local search, TMDb search, and future recommendation entry points aligned.
-/// </remarks>
-public sealed record DiscoveryQuery(
-    string Query,
-    TitleKind Kind,
-    string RegionCode,
-    int MaxResults = 20,
-    string GenreFilter = null,
-    string AgeRatingFilter = null);
+public sealed record RecommendationFilterOption(string DisplayName, string Value);

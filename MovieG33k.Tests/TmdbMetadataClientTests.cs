@@ -146,7 +146,7 @@ public sealed class TmdbMetadataClientTests
     }
 
     [Test]
-    public async Task GetDiscoverAsyncUsesDiscoverEndpointWithStableSort()
+    public async Task GetDiscoverAsyncBlendsQualityAndPopularityDiscoverQueries()
     {
         var handler = new PagedTrendingMessageHandler();
         var client = new TmdbMetadataClient(new HttpClient(handler), new TmdbOptions
@@ -156,13 +156,65 @@ public sealed class TmdbMetadataClientTests
             Language = "en-GB"
         });
 
-        var results = await client.GetDiscoverAsync(TitleKind.Movie, 25);
+        var results = await client.GetDiscoverAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB", 25));
 
         Assert.That(results, Has.Count.EqualTo(25));
-        Assert.That(handler.RequestUris[0], Does.Contain("/3/discover/movie"));
-        Assert.That(handler.RequestUris[0], Does.Contain("sort_by=popularity.desc"));
-        Assert.That(handler.RequestUris[0], Does.Contain("vote_count.gte=200"));
-        Assert.That(handler.RequestUris[0], Does.Contain("watch_region=GB"));
+        Assert.That(handler.RequestUris.Any(uri => uri.Contains("/3/discover/movie", StringComparison.Ordinal)), Is.True);
+        Assert.That(handler.RequestUris.Any(uri => uri.Contains("sort_by=vote_average.desc", StringComparison.Ordinal)), Is.True);
+        Assert.That(handler.RequestUris.Any(uri => uri.Contains("vote_count.gte=1500", StringComparison.Ordinal)), Is.True);
+        Assert.That(handler.RequestUris.Any(uri => uri.Contains("sort_by=popularity.desc", StringComparison.Ordinal)), Is.True);
+        Assert.That(handler.RequestUris.Any(uri => uri.Contains("vote_count.gte=400", StringComparison.Ordinal)), Is.True);
+        Assert.That(handler.RequestUris.Any(uri => uri.Contains("watch_region=GB", StringComparison.Ordinal)), Is.True);
+    }
+
+    [Test]
+    public async Task GetDiscoverAsyncMapsGenreIdsToGenreNames()
+    {
+        var handler = new PagedTrendingMessageHandler();
+        var client = new TmdbMetadataClient(new HttpClient(handler), new TmdbOptions
+        {
+            AccessToken = "private-access-token",
+            RegionCode = "GB",
+            Language = "en-GB"
+        });
+
+        var results = await client.GetDiscoverAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB", 1));
+
+        Assert.That(results[0].Genres, Does.Contain("Action"));
+        Assert.That(results[0].Genres, Does.Contain("Science Fiction"));
+    }
+
+    [Test]
+    public async Task GetDiscoverAsyncIncludesGenreIdWhenGenreFilterIsSet()
+    {
+        var handler = new PagedTrendingMessageHandler();
+        var client = new TmdbMetadataClient(new HttpClient(handler), new TmdbOptions
+        {
+            AccessToken = "private-access-token",
+            RegionCode = "GB",
+            Language = "en-GB"
+        });
+
+        await client.GetDiscoverAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB", 25, GenreFilter: "Horror"));
+
+        Assert.That(handler.RequestUris.Any(uri => uri.Contains("with_genres=27", StringComparison.Ordinal)), Is.True);
+    }
+
+    [Test]
+    public async Task GetDiscoverAsyncDoesNotSendInvalidRangeCertificationFilters()
+    {
+        var handler = new PagedTrendingMessageHandler();
+        var client = new TmdbMetadataClient(new HttpClient(handler), new TmdbOptions
+        {
+            AccessToken = "private-access-token",
+            RegionCode = "GB",
+            Language = "en-GB"
+        });
+
+        await client.GetDiscoverAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB", 25, AgeRatingFilter: "15+"));
+
+        Assert.That(handler.RequestUris.Any(uri => uri.Contains("certification=", StringComparison.Ordinal)), Is.False);
+        Assert.That(handler.RequestUris.Any(uri => uri.Contains("certification_country=", StringComparison.Ordinal)), Is.False);
     }
 
     private sealed class CapturingMessageHandler : HttpMessageHandler
@@ -334,6 +386,7 @@ public sealed class TmdbMetadataClientTests
                         "overview": "Overview {{index}}",
                         "release_date": "1987-07-17",
                         "poster_path": "/poster-{{index}}.jpg",
+                        "genre_ids": [28, 878],
                         "original_language": "en",
                         "vote_average": 7.0
                       }
