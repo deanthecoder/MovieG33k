@@ -121,6 +121,61 @@ public sealed class DiscoveryWorkspaceService
     }
 
     /// <summary>
+    /// Builds rating insights for the supplied media type.
+    /// </summary>
+    public async Task<LibraryInsights> GetInsightsAsync(TitleKind kind, CancellationToken cancellationToken = default)
+    {
+        await m_libraryRepository.InitializeAsync(cancellationToken);
+        var ratedTitles = await m_libraryRepository.GetRatedTitleInsightsAsync(kind, cancellationToken);
+        Logger.Instance.Info($"Loaded {ratedTitles.Count} rated {kind} titles for insights.");
+
+        var averageRating =
+            ratedTitles.Count == 0
+                ? 0
+                : ratedTitles.Average(title => title.ScoreOutOfTen) / 2d;
+
+        var ratingDistribution = Enumerable
+            .Range(1, 5)
+            .Select(stars => new RatingDistributionBucket(
+                stars,
+                ratedTitles.Count(title => ToStarRating(title.ScoreOutOfTen) == stars)))
+            .ToArray();
+
+        var ratingByDecade = ratedTitles
+            .Where(title => title.ReleaseYear.HasValue)
+            .GroupBy(title => (title.ReleaseYear!.Value / 10) * 10)
+            .Select(group => new DecadeRatingBucket(
+                group.Key,
+                group.Count(),
+                group.Average(title => title.ScoreOutOfTen) / 2d))
+            .OrderBy(bucket => bucket.DecadeStartYear)
+            .ToArray();
+
+        var ratingByGenre = ratedTitles
+            .SelectMany(title =>
+                (title.Genres?.Count > 0 ? title.Genres : Array.Empty<string>())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(genre => new { Genre = genre, title.ScoreOutOfTen }))
+            .GroupBy(entry => entry.Genre, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new GenreRatingBucket(
+                group.Key,
+                group.Count(),
+                group.Average(entry => entry.ScoreOutOfTen) / 2d))
+            .OrderByDescending(bucket => bucket.AverageRatingOutOfFive)
+            .ThenByDescending(bucket => bucket.TitleCount)
+            .ThenBy(bucket => bucket.Genre)
+            .ToArray();
+
+        return new LibraryInsights(
+            kind,
+            ratedTitles.Count,
+            averageRating,
+            ratingDistribution,
+            ratingByDecade,
+            ratingByGenre);
+    }
+
+    /// <summary>
     /// Saves a 0-5 star rating and marks the title as watched.
     /// </summary>
     public async Task SaveRatingAsync(CatalogTitle title, int stars, CancellationToken cancellationToken = default)
@@ -337,6 +392,9 @@ public sealed class DiscoveryWorkspaceService
         snapshot.Rating != null ||
         snapshot.WatchState != null ||
         snapshot.WatchlistEntry != null;
+
+    private static int ToStarRating(int scoreOutOfTen) =>
+        (int)Math.Round(scoreOutOfTen / 2d, MidpointRounding.AwayFromZero);
 
     private string BuildStatusText(DiscoveryQuery query, int localMatchCount, int remoteCount)
     {

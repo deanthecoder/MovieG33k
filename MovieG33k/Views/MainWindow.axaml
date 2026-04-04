@@ -87,27 +87,7 @@
         <Border Grid.Row="1"
                 Margin="0,0,0,14"
                 Classes="searchSurface">
-          <StackPanel Spacing="14">
-            <StackPanel Orientation="Horizontal"
-                        Spacing="8">
-              <Button Content="Browse movies"
-                      Classes="neon"
-                      Padding="14,10"
-                      Command="{Binding ShowDiscoverCommand}"
-                      IsEnabled="{Binding !IsDiscoveryMode}" />
-              <Button Content="Pinned to watch"
-                      Classes="neon"
-                      Padding="14,10"
-                      Command="{Binding ShowWatchlistCommand}"
-                      IsEnabled="{Binding !IsWatchlistMode}" />
-              <Button Content="Watched and rated"
-                      Classes="neon"
-                      Padding="14,10"
-                      Command="{Binding ShowWatchedCommand}"
-                      IsEnabled="{Binding !IsWatchedMode}" />
-            </StackPanel>
-
-            <Grid ColumnDefinitions="Auto,*,Auto">
+          <Grid ColumnDefinitions="Auto,*,Auto,Auto">
               <ComboBox MinWidth="136"
                         Margin="0,0,8,0"
                         ItemsSource="{Binding KindOptions}"
@@ -125,10 +105,19 @@
                        Background="Transparent"
                        BorderThickness="0"
                        FontSize="24"
+                       IsVisible="{Binding !IsInsightsMode}"
                        Text="{Binding SearchText, Mode=TwoWay}"
                        Watermark="{Binding SearchWatermark}" />
 
+              <TextBlock Grid.Column="1"
+                         VerticalAlignment="Center"
+                         Classes="launcherHint"
+                         FontSize="18"
+                         IsVisible="{Binding IsInsightsMode}"
+                         Text="Charts built from your rated library." />
+
               <ProgressBar Grid.Column="2"
+                           Margin="0,0,12,0"
                            Width="72"
                            Height="4"
                            VerticalAlignment="Center"
@@ -137,8 +126,56 @@
                            Foreground="#E6F5F5F5"
                            Background="#33FFFFFF"
                            ShowProgressText="False" />
+
+              <StackPanel Grid.Column="3"
+                          Orientation="Horizontal"
+                          Spacing="8">
+                <Button Classes="neon"
+                        Width="42"
+                        Height="42"
+                        Padding="0"
+                        Command="{Binding ShowDiscoverCommand}"
+                        IsEnabled="{Binding !IsDiscoveryMode}"
+                        ToolTip.Tip="Browse movies">
+                  <materialIcons:MaterialIcon Width="20"
+                                              Height="20"
+                                              Kind="Magnify" />
+                </Button>
+                <Button Classes="neon"
+                        Width="42"
+                        Height="42"
+                        Padding="0"
+                        Command="{Binding ShowWatchlistCommand}"
+                        IsEnabled="{Binding !IsWatchlistMode}"
+                        ToolTip.Tip="Pinned to watch">
+                  <materialIcons:MaterialIcon Width="20"
+                                              Height="20"
+                                              Kind="EyeOutline" />
+                </Button>
+                <Button Classes="neon"
+                        Width="42"
+                        Height="42"
+                        Padding="0"
+                        Command="{Binding ShowWatchedCommand}"
+                        IsEnabled="{Binding !IsWatchedMode}"
+                        ToolTip.Tip="Watched and rated">
+                  <materialIcons:MaterialIcon Width="20"
+                                              Height="20"
+                                              Kind="StarOutline" />
+                </Button>
+                <Button Classes="neon"
+                        Width="42"
+                        Height="42"
+                        Padding="0"
+                        Command="{Binding ShowInsightsCommand}"
+                        IsEnabled="{Binding !IsInsightsMode}"
+                        ToolTip.Tip="Insights">
+                  <materialIcons:MaterialIcon Width="20"
+                                              Height="20"
+                                              Kind="ChartPie" />
+                </Button>
+              </StackPanel>
             </Grid>
-          </StackPanel>
         </Border>
 
         <StackPanel Grid.Row="2"
@@ -152,6 +189,7 @@
         </StackPanel>
 
         <Grid Grid.Row="3"
+              IsVisible="{Binding !IsInsightsMode}"
               ColumnDefinitions="0.9*,1.1*">
           <Border Classes="resultsPanel">
             <Grid RowDefinitions="*,Auto">
@@ -335,6 +373,174 @@
             </StackPanel>
           </ScrollViewer>
         </Grid>
+
+        <ScrollViewer Grid.Row="3"
+                      IsVisible="{Binding IsInsightsMode}"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Spacing="18">
+            <Grid ColumnDefinitions="*,*,*,*">
+              <Border Classes="searchSurface"
+                      Margin="0,0,12,0">
+                <StackPanel Spacing="8">
+                  <TextBlock Classes="launcherEyebrow"
+                             FontSize="12"
+                             Text="RATED TITLES" />
+                  <TextBlock Classes="launcherTitle"
+                             FontSize="28"
+                             Text="{Binding TotalRatedValue}" />
+                </StackPanel>
+              </Border>
+
+              <Border Grid.Column="1"
+                      Classes="searchSurface"
+                      Margin="0,0,12,0">
+                <StackPanel Spacing="8">
+                  <TextBlock Classes="launcherEyebrow"
+                             FontSize="12"
+                             Text="AVERAGE RATING" />
+                  <TextBlock Classes="launcherTitle"
+                             FontSize="28"
+                             Text="{Binding AverageRatingValue}" />
+                </StackPanel>
+              </Border>
+
+              <Border Grid.Column="2"
+                      Classes="searchSurface"
+                      Margin="0,0,12,0">
+                <StackPanel Spacing="8">
+                  <TextBlock Classes="launcherEyebrow"
+                             FontSize="12"
+                             Text="TOP DECADE" />
+                  <TextBlock Classes="launcherTitle"
+                             FontSize="28"
+                             Text="{Binding TopDecadeValue}" />
+                </StackPanel>
+              </Border>
+
+              <Border Grid.Column="3"
+                      Classes="searchSurface">
+                <StackPanel Spacing="8">
+                  <TextBlock Classes="launcherEyebrow"
+                             FontSize="12"
+                             Text="TOP GENRE" />
+                  <TextBlock Classes="launcherTitle"
+                             FontSize="28"
+                             Text="{Binding TopGenreValue}" />
+                </StackPanel>
+              </Border>
+            </Grid>
+
+            <Border Classes="searchSurface"
+                    IsVisible="{Binding !HasInsights}">
+              <TextBlock Classes="launcherHint"
+                         FontSize="18"
+                         Text="{Binding InsightsEmptyState}" />
+            </Border>
+
+            <Grid IsVisible="{Binding HasInsights}"
+                  ColumnDefinitions="0.95*,1.05*">
+              <Border Classes="searchSurface"
+                      Margin="0,0,18,0">
+                <StackPanel Spacing="14">
+                  <TextBlock Classes="launcherEyebrow"
+                             FontSize="12"
+                             Text="RATING DISTRIBUTION" />
+                  <ItemsControl ItemsSource="{Binding RatingDistribution}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="viewModels:InsightsBarViewModel">
+                        <StackPanel Margin="0,0,0,10"
+                                    Spacing="6">
+                          <Grid ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock Text="{Binding Label}" />
+                            <TextBlock Grid.Column="2"
+                                       Classes="launcherHint"
+                                       Text="{Binding ValueText}" />
+                          </Grid>
+                          <ProgressBar Height="8"
+                                       Minimum="0"
+                                       Maximum="100"
+                                       Value="{Binding Percent}"
+                                       Foreground="#F4C94A"
+                                       Background="#1AFFFFFF"
+                                       ShowProgressText="False" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </Border>
+
+              <Border Grid.Column="1"
+                      Classes="searchSurface">
+                <StackPanel Spacing="14">
+                  <TextBlock Classes="launcherEyebrow"
+                             FontSize="12"
+                             Text="GENRE AVERAGES" />
+                  <ItemsControl ItemsSource="{Binding RatingByGenre}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="viewModels:InsightsBarViewModel">
+                        <StackPanel Margin="0,0,0,10"
+                                    Spacing="6">
+                          <Grid ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock Text="{Binding Label}" />
+                            <TextBlock Grid.Column="2"
+                                       Text="{Binding ValueText}" />
+                          </Grid>
+                          <ProgressBar Height="8"
+                                       Minimum="0"
+                                       Maximum="100"
+                                       Value="{Binding Percent}"
+                                       Foreground="#7CEB8B"
+                                       Background="#1AFFFFFF"
+                                       ShowProgressText="False" />
+                          <TextBlock Classes="launcherHint"
+                                     FontSize="12"
+                                     IsVisible="{Binding HasDetailText}"
+                                     Text="{Binding DetailText}" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </Border>
+            </Grid>
+
+            <Border Classes="searchSurface"
+                    IsVisible="{Binding HasInsights}">
+              <StackPanel Spacing="14">
+                <TextBlock Classes="launcherEyebrow"
+                           FontSize="12"
+                           Text="AVERAGE RATING BY DECADE" />
+                <ItemsControl ItemsSource="{Binding RatingByDecade}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="viewModels:InsightsBarViewModel">
+                      <StackPanel Margin="0,0,0,10"
+                                  Spacing="6">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                          <TextBlock Text="{Binding Label}" />
+                          <TextBlock Grid.Column="2"
+                                     Text="{Binding ValueText}" />
+                        </Grid>
+                        <ProgressBar Height="8"
+                                     Minimum="0"
+                                     Maximum="100"
+                                     Value="{Binding Percent}"
+                                     Foreground="#53C7FF"
+                                     Background="#1AFFFFFF"
+                                     ShowProgressText="False" />
+                        <TextBlock Classes="launcherHint"
+                                   FontSize="12"
+                                   IsVisible="{Binding HasDetailText}"
+                                   Text="{Binding DetailText}" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
       </Grid>
     </dialogHostAvalonia:DialogHost>
   </Grid>

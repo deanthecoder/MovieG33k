@@ -38,6 +38,7 @@ public sealed class ReadmeScreenshotTests
             ImageDirectory.Create();
 
             await CaptureBrowseScreenshotAsync();
+            await CaptureInsightsScreenshotAsync();
             await CaptureWatchlistScreenshotAsync();
             await CaptureWatchedScreenshotAsync();
 
@@ -81,6 +82,27 @@ public sealed class ReadmeScreenshotTests
             viewModel.SelectedResult = viewModel.Results.First(item => item.Title == "Hackers");
             await WaitForSelectedPosterAsync(viewModel);
             SaveScreenshot(window, "pinned-movies.png");
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    private static async Task CaptureInsightsScreenshotAsync()
+    {
+        var sampleData = CreateSampleData();
+        var viewModel = CreateViewModel(sampleData);
+        var window = CreateWindow(viewModel);
+
+        window.Show();
+
+        try
+        {
+            viewModel.ShowInsightsCommand.Execute(null);
+            await viewModel.RefreshAsync();
+            await WaitForRenderAsync();
+            SaveScreenshot(window, "insights.png");
         }
         finally
         {
@@ -289,6 +311,18 @@ public sealed class ReadmeScreenshotTests
 
         public Task<IReadOnlyList<LibraryItemSnapshot>> GetWatchlistAsync(string query, TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
             Task.FromResult(Filter(m_sampleData.Watchlist, query, kind, maxResults));
+
+        public Task<IReadOnlyList<RatedTitleInsight>> GetRatedTitleInsightsAsync(TitleKind kind, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<RatedTitleInsight>>(
+                m_sampleData.ByCatalogKey.Values
+                    .Where(snapshot => snapshot.Title.Kind == kind && snapshot.Rating != null)
+                    .Select(snapshot => new RatedTitleInsight(
+                        CatalogTitleKey.Create(snapshot.Title.Kind, snapshot.Title.Identifiers),
+                        snapshot.Title.Name,
+                        snapshot.Rating.ScoreOutOfTen,
+                        snapshot.Title.ReleaseYear,
+                        snapshot.Title.Genres ?? Array.Empty<string>()))
+                    .ToArray());
 
         public Task ResetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 

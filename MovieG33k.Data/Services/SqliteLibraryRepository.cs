@@ -674,6 +674,55 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<RatedTitleInsight>> GetRatedTitleInsightsAsync(
+        TitleKind kind,
+        CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync(cancellationToken);
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                t.catalog_key,
+                t.name,
+                t.release_date,
+                t.genres,
+                r.score_out_of_ten
+            FROM titles t
+            INNER JOIN user_ratings r ON r.catalog_key = t.catalog_key
+            WHERE t.kind = $kind
+            ORDER BY COALESCE(r.updated_utc, t.updated_utc) DESC, t.name ASC;
+            """;
+        command.Parameters.AddWithValue("$kind", kind.ToString());
+
+        var results = new List<RatedTitleInsight>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            int? releaseYear =
+                reader.IsDBNull(reader.GetOrdinal("release_date"))
+                    ? null
+                    : DateOnly.Parse(reader.GetString(reader.GetOrdinal("release_date")), CultureInfo.InvariantCulture).Year;
+            var genres = reader.IsDBNull(reader.GetOrdinal("genres"))
+                ? Array.Empty<string>()
+                : reader.GetString(reader.GetOrdinal("genres")).Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            results.Add(new RatedTitleInsight(
+                reader.GetString(reader.GetOrdinal("catalog_key")),
+                reader.GetString(reader.GetOrdinal("name")),
+                reader.GetInt32(reader.GetOrdinal("score_out_of_ten")),
+                releaseYear,
+                genres));
+        }
+
+        return results;
+    }
+
+    /// <inheritdoc />
     public Task ResetAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

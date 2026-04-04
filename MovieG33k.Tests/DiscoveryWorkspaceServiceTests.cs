@@ -215,23 +215,95 @@ public sealed class DiscoveryWorkspaceServiceTests
         Assert.That(repository.DeletedWatchlistEntries[0], Is.EqualTo((title.Identifiers, TitleKind.Movie)));
     }
 
+    [Test]
+    public async Task GetInsightsAsyncBuildsRatingAndGenreBreakdowns()
+    {
+        var repository = new FakeLibraryRepository(
+            [],
+            ratedInsights:
+            [
+                new RatedTitleInsight("movie:1", "RoboCop", 10, 1987, ["Action", "Science Fiction"]),
+                new RatedTitleInsight("movie:2", "Aliens", 8, 1986, ["Action", "Science Fiction"]),
+                new RatedTitleInsight("movie:3", "Hackers", 6, 1995, ["Crime"])
+            ]);
+        var tmdbClient = new FakeTmdbMetadataClient([]);
+        var service = new DiscoveryWorkspaceService(repository, tmdbClient);
+
+        var insights = await service.GetInsightsAsync(TitleKind.Movie);
+
+        Assert.That(insights.TotalRatedTitles, Is.EqualTo(3));
+        Assert.That(insights.AverageRatingOutOfFive, Is.EqualTo(4.0d).Within(0.001d));
+        Assert.That(insights.RatingDistribution.Select(bucket => bucket.Stars), Is.EqualTo(new[] { 1, 2, 3, 4, 5 }));
+        Assert.That(insights.RatingDistribution.Single(bucket => bucket.Stars == 5).TitleCount, Is.EqualTo(1));
+        Assert.That(insights.RatingByDecade.Single(bucket => bucket.DecadeStartYear == 1980).TitleCount, Is.EqualTo(2));
+        Assert.That(insights.RatingByGenre.Select(bucket => bucket.Genre).ToArray(), Is.EqualTo(new[] { "Action", "Science Fiction", "Crime" }));
+    }
+
+    [Test]
+    public async Task GetInsightsAsyncExcludesTitlesWithoutGenresFromGenreBreakdown()
+    {
+        var repository = new FakeLibraryRepository(
+            [],
+            ratedInsights:
+            [
+                new RatedTitleInsight("movie:1", "Unknown", 8, 1999, Array.Empty<string>()),
+                new RatedTitleInsight("movie:2", "RoboCop", 10, 1987, ["Action"])
+            ]);
+        var tmdbClient = new FakeTmdbMetadataClient([]);
+        var service = new DiscoveryWorkspaceService(repository, tmdbClient);
+
+        var insights = await service.GetInsightsAsync(TitleKind.Movie);
+
+        Assert.That(insights.RatingByGenre.Select(bucket => bucket.Genre).ToArray(), Is.EqualTo(new[] { "Action" }));
+    }
+
+    [Test]
+    public async Task GetInsightsAsyncDoesNotCapTheGenreListToEightEntries()
+    {
+        var repository = new FakeLibraryRepository(
+            [],
+            ratedInsights:
+            [
+                new RatedTitleInsight("movie:1", "One", 10, 2001, ["Action"]),
+                new RatedTitleInsight("movie:2", "Two", 9, 2002, ["Adventure"]),
+                new RatedTitleInsight("movie:3", "Three", 8, 2003, ["Comedy"]),
+                new RatedTitleInsight("movie:4", "Four", 7, 2004, ["Crime"]),
+                new RatedTitleInsight("movie:5", "Five", 6, 2005, ["Drama"]),
+                new RatedTitleInsight("movie:6", "Six", 5, 2006, ["Fantasy"]),
+                new RatedTitleInsight("movie:7", "Seven", 4, 2007, ["History"]),
+                new RatedTitleInsight("movie:8", "Eight", 3, 2008, ["Horror"]),
+                new RatedTitleInsight("movie:9", "Nine", 2, 2009, ["Music"])
+            ]);
+        var tmdbClient = new FakeTmdbMetadataClient([]);
+        var service = new DiscoveryWorkspaceService(repository, tmdbClient);
+
+        var insights = await service.GetInsightsAsync(TitleKind.Movie);
+
+        Assert.That(insights.RatingByGenre, Has.Count.EqualTo(9));
+        Assert.That(insights.RatingByGenre.Any(bucket => bucket.Genre == "Comedy"), Is.True);
+        Assert.That(insights.RatingByGenre.Any(bucket => bucket.Genre == "Drama"), Is.True);
+    }
+
     private sealed class FakeLibraryRepository : ILibraryRepository
     {
         private readonly IReadOnlyList<LibraryItemSnapshot> m_searchResults;
         private readonly IReadOnlyList<LibraryItemSnapshot> m_watchedResults;
         private readonly IReadOnlyList<LibraryItemSnapshot> m_watchlistResults;
         private readonly IReadOnlyDictionary<string, LibraryItemSnapshot> m_snapshotsByKey;
+        private readonly IReadOnlyList<RatedTitleInsight> m_ratedInsights;
 
         public FakeLibraryRepository(
             IReadOnlyList<LibraryItemSnapshot> searchResults,
             IReadOnlyList<LibraryItemSnapshot> watchedResults = null,
             IReadOnlyList<LibraryItemSnapshot> watchlistResults = null,
-            IReadOnlyDictionary<string, LibraryItemSnapshot> snapshotsByKey = null)
+            IReadOnlyDictionary<string, LibraryItemSnapshot> snapshotsByKey = null,
+            IReadOnlyList<RatedTitleInsight> ratedInsights = null)
         {
             m_searchResults = searchResults;
             m_watchedResults = watchedResults ?? searchResults;
             m_watchlistResults = watchlistResults ?? searchResults;
             m_snapshotsByKey = snapshotsByKey ?? new Dictionary<string, LibraryItemSnapshot>(StringComparer.OrdinalIgnoreCase);
+            m_ratedInsights = ratedInsights ?? Array.Empty<RatedTitleInsight>();
         }
 
         public List<CatalogTitle> UpsertedTitles { get; } = [];
@@ -273,6 +345,9 @@ public sealed class DiscoveryWorkspaceServiceTests
 
         public Task<IReadOnlyList<LibraryItemSnapshot>> GetWatchlistAsync(string query, TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
             Task.FromResult(m_watchlistResults);
+
+        public Task<IReadOnlyList<RatedTitleInsight>> GetRatedTitleInsightsAsync(TitleKind kind, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<RatedTitleInsight>>(m_ratedInsights);
 
         public Task ResetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }

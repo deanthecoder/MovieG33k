@@ -180,4 +180,51 @@ public sealed class SqliteLibraryRepositoryTests
                 databaseFile.Delete();
         }
     }
+
+    [Test]
+    public async Task GetRatedTitleInsightsAsyncReturnsYearGenreAndRatingData()
+    {
+        var databaseFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db"));
+
+        try
+        {
+            var repository = new SqliteLibraryRepository(databaseFile);
+            var robocop = new MovieEntry(
+                new TitleIdentifiers(5548, "tt0093870"),
+                "RoboCop",
+                "RoboCop",
+                "Detroit's future lawman.",
+                new DateOnly(1987, 7, 17),
+                null,
+                null,
+                ["Action", "Science Fiction"],
+                "en");
+            var hackers = new MovieEntry(
+                new TitleIdentifiers(10428, "tt0113243"),
+                "Hackers",
+                "Hackers",
+                "Hack the planet.",
+                new DateOnly(1995, 9, 15),
+                null,
+                null,
+                ["Crime", "Thriller"],
+                "en");
+
+            await repository.UpsertTitlesAsync([robocop, hackers]);
+            await repository.UpsertRatingAsync(new UserRating(robocop.Identifiers, TitleKind.Movie, 10, DateTimeOffset.UtcNow));
+            await repository.UpsertRatingAsync(new UserRating(hackers.Identifiers, TitleKind.Movie, 6, DateTimeOffset.UtcNow.AddDays(-1)));
+
+            var results = await repository.GetRatedTitleInsightsAsync(TitleKind.Movie);
+
+            Assert.That(results, Has.Count.EqualTo(2));
+            Assert.That(results.Single(item => item.Title == "RoboCop").ReleaseYear, Is.EqualTo(1987));
+            Assert.That(results.Single(item => item.Title == "RoboCop").Genres, Is.EquivalentTo(new[] { "Action", "Science Fiction" }));
+            Assert.That(results.Single(item => item.Title == "Hackers").ScoreOutOfTen, Is.EqualTo(6));
+        }
+        finally
+        {
+            if (databaseFile.Exists)
+                databaseFile.Delete();
+        }
+    }
 }

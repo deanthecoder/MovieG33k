@@ -97,6 +97,13 @@ public interface ILibraryRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns the user's rated titles for insight calculations.
+    /// </summary>
+    Task<IReadOnlyList<RatedTitleInsight>> GetRatedTitleInsightsAsync(
+        TitleKind kind,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Clears the local MovieG33k database so the app can start fresh.
     /// </summary>
     Task ResetAsync(CancellationToken cancellationToken = default);

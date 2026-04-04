@@ -44,7 +44,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         Discover,
         Watchlist,
-        Watched
+        Watched,
+        Insights
     }
 
     private static readonly HttpClient PosterHttpClient = CreatePosterHttpClient();
@@ -55,6 +56,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly AsyncRelayCommand m_loadMoreResultsCommand;
     private readonly RelayCommand m_openSelectedExternalLinkCommand;
     private readonly string m_regionCode;
+    private LibraryInsights m_insights;
     private string m_searchText;
     private DiscoveryKindOption m_selectedKind;
     private LibraryItemSnapshotViewModel m_selectedResult;
@@ -93,10 +95,14 @@ public sealed class MainWindowViewModel : ViewModelBase
         m_selectedKind = KindOptions[0];
         m_currentMode = LibraryViewMode.Discover;
         Results = new ObservableCollection<LibraryItemSnapshotViewModel>();
+        RatingDistribution = new ObservableCollection<InsightsBarViewModel>();
+        RatingByDecade = new ObservableCollection<InsightsBarViewModel>();
+        RatingByGenre = new ObservableCollection<InsightsBarViewModel>();
 
         ShowDiscoverCommand = new RelayCommand(_ => CurrentMode = LibraryViewMode.Discover);
         ShowWatchlistCommand = new RelayCommand(_ => CurrentMode = LibraryViewMode.Watchlist);
         ShowWatchedCommand = new RelayCommand(_ => CurrentMode = LibraryViewMode.Watched);
+        ShowInsightsCommand = new RelayCommand(_ => CurrentMode = LibraryViewMode.Insights);
         ImportImdbRatingsCommand = new AsyncRelayCommand(
             _ => ImportImdbRatingsAsync(),
             onException: exception => m_dialogService.ShowMessage("Import failed", exception.Message));
@@ -130,6 +136,8 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public ICommand ShowWatchedCommand { get; }
 
+    public ICommand ShowInsightsCommand { get; }
+
     public ICommand ImportImdbRatingsCommand { get; }
 
     public ICommand ResetDatabaseCommand { get; }
@@ -141,6 +149,12 @@ public sealed class MainWindowViewModel : ViewModelBase
     public ICommand OpenSelectedExternalLinkCommand => m_openSelectedExternalLinkCommand;
 
     public ICommand LoadMoreResultsCommand => m_loadMoreResultsCommand;
+
+    public ObservableCollection<InsightsBarViewModel> RatingDistribution { get; }
+
+    public ObservableCollection<InsightsBarViewModel> RatingByDecade { get; }
+
+    public ObservableCollection<InsightsBarViewModel> RatingByGenre { get; }
 
     public string SearchText
     {
@@ -224,6 +238,16 @@ public sealed class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(Star5Glyph));
     }
 
+    private void RefreshInsightsPresentationState()
+    {
+        OnPropertyChanged(nameof(HasInsights));
+        OnPropertyChanged(nameof(InsightsEmptyState));
+        OnPropertyChanged(nameof(TotalRatedValue));
+        OnPropertyChanged(nameof(AverageRatingValue));
+        OnPropertyChanged(nameof(TopDecadeValue));
+        OnPropertyChanged(nameof(TopGenreValue));
+    }
+
     public string StatusText
     {
         get => m_statusText;
@@ -254,6 +278,8 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public bool IsWatchedMode => CurrentMode == LibraryViewMode.Watched;
 
+    public bool IsInsightsMode => CurrentMode == LibraryViewMode.Insights;
+
     private LibraryViewMode CurrentMode
     {
         get => m_currentMode;
@@ -265,6 +291,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsDiscoveryMode));
             OnPropertyChanged(nameof(IsWatchlistMode));
             OnPropertyChanged(nameof(IsWatchedMode));
+            OnPropertyChanged(nameof(IsInsightsMode));
             OnPropertyChanged(nameof(SearchWatermark));
             OnPropertyChanged(nameof(ResultsHeading));
             ResetResultLimitAndRefresh();
@@ -274,6 +301,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public string SearchWatermark =>
         CurrentMode switch
         {
+            LibraryViewMode.Insights => "Insights are built from the titles you've rated.",
             LibraryViewMode.Watched => "Filter your watched titles by title...",
             LibraryViewMode.Watchlist => "Filter the films and shows you've pinned for later...",
             _ => "Search for something to watch or rate..."
@@ -282,6 +310,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public string ResultsHeading =>
         CurrentMode switch
         {
+            LibraryViewMode.Insights => "INSIGHTS",
             LibraryViewMode.Watched => "WATCHED AND RATED",
             LibraryViewMode.Watchlist => "PINNED TO WATCH",
             _ => "BROWSE MOVIES"
@@ -332,6 +361,33 @@ public sealed class MainWindowViewModel : ViewModelBase
             LibraryViewMode.Watchlist => "Pin likely candidates here first, then rate the ones you actually watch.",
             _ => "Search for something new, then pin or rate anything you want to keep."
         };
+
+    public bool HasInsights => m_insights?.TotalRatedTitles > 0;
+
+    public string InsightsEmptyState =>
+        SelectedKind?.Kind == TitleKind.TvShow
+            ? "Rate a few TV shows and your charts will show up here."
+            : "Rate a few movies and your charts will show up here.";
+
+    public string TotalRatedValue => m_insights?.TotalRatedTitles.ToString() ?? "0";
+
+    public string AverageRatingValue => m_insights == null || m_insights.TotalRatedTitles == 0 ? "0.0/5" : $"{m_insights.AverageRatingOutOfFive:0.0}/5";
+
+    public string TopDecadeValue =>
+        m_insights?.RatingByDecade?
+            .OrderByDescending(bucket => bucket.AverageRatingOutOfFive)
+            .ThenByDescending(bucket => bucket.TitleCount)
+            .Select(bucket => $"{bucket.DecadeStartYear}s")
+            .FirstOrDefault()
+        ?? "N/A";
+
+    public string TopGenreValue =>
+        m_insights?.RatingByGenre?
+            .OrderByDescending(bucket => bucket.TitleCount)
+            .ThenByDescending(bucket => bucket.AverageRatingOutOfFive)
+            .Select(bucket => bucket.Genre)
+            .FirstOrDefault()
+        ?? "N/A";
 
     public bool HasSelectedRating => SelectedResult?.Snapshot.Rating != null;
 
@@ -407,6 +463,12 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             IsBusy = true;
 
+            if (CurrentMode == LibraryViewMode.Insights)
+            {
+                await RefreshInsightsAsync(cancellationToken);
+                return;
+            }
+
             var query = new DiscoveryQuery(SearchText, SelectedKind.Kind, m_regionCode, m_resultLimit);
             var result =
                 CurrentMode switch
@@ -447,6 +509,67 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             if (!cancellationToken.IsCancellationRequested)
                 IsBusy = false;
+        }
+    }
+
+    private async Task RefreshInsightsAsync(CancellationToken cancellationToken)
+    {
+        var insights = await m_discoveryWorkspaceService.GetInsightsAsync(SelectedKind.Kind, cancellationToken);
+        if (cancellationToken.IsCancellationRequested)
+            return;
+
+        m_insights = insights;
+        Results.Clear();
+        SelectedResult = null;
+        CanLoadMore = false;
+        m_enrichedDetailKeys.Clear();
+
+        ReplaceInsightBars(
+            RatingDistribution,
+            insights.RatingDistribution.Select(bucket => new InsightsBarViewModel(
+                $"{bucket.Stars}★",
+                bucket.TitleCount.ToString(),
+                bucket.TitleCount == 1 ? "1 title" : $"{bucket.TitleCount} titles",
+                bucket.TitleCount)));
+
+        ReplaceInsightBars(
+            RatingByDecade,
+            insights.RatingByDecade.Select(bucket => new InsightsBarViewModel(
+                $"{bucket.DecadeStartYear}s",
+                $"{bucket.AverageRatingOutOfFive:0.0}/5",
+                bucket.TitleCount == 1 ? "1 title" : $"{bucket.TitleCount} titles",
+                bucket.AverageRatingOutOfFive)));
+
+        ReplaceInsightBars(
+            RatingByGenre,
+            insights.RatingByGenre.Select(bucket => new InsightsBarViewModel(
+                bucket.Genre,
+                $"{bucket.AverageRatingOutOfFive:0.0}/5",
+                bucket.TitleCount == 1 ? "1 title" : $"{bucket.TitleCount} titles",
+                bucket.AverageRatingOutOfFive)));
+
+        RefreshInsightsPresentationState();
+        var mediaType = SelectedKind.Kind == TitleKind.Movie ? "movies" : "TV shows";
+        StatusText =
+            insights.TotalRatedTitles == 0
+                ? $"No rated {mediaType} yet."
+                : $"Stats from {insights.TotalRatedTitles} rated {mediaType}.";
+    }
+
+    private static void ReplaceInsightBars(
+        ObservableCollection<InsightsBarViewModel> target,
+        IEnumerable<InsightsBarViewModel> source)
+    {
+        target.Clear();
+        var items = source?.ToArray() ?? Array.Empty<InsightsBarViewModel>();
+        var maxValue = items.Length == 0 ? 0 : items.Max(item => item.Percent);
+
+        foreach (var item in items)
+        {
+            target.Add(item with
+            {
+                Percent = maxValue <= 0 ? 0 : item.Percent / maxValue * 100d
+            });
         }
     }
 

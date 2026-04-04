@@ -165,6 +165,39 @@ public sealed class MainWindowViewModelTests
         Assert.That(viewModel.OpenSelectedExternalLinkCommand.CanExecute(null), Is.True);
     }
 
+    [Test]
+    public async Task InsightsModeBuildsStatsFromRatedTitles()
+    {
+        var titles =
+            new[]
+            {
+                new LibraryItemSnapshot(
+                    new MovieEntry(new TitleIdentifiers(1, "tt001"), "RoboCop", "RoboCop", "One", new DateOnly(1987, 7, 17), null, null, ["Action", "Science Fiction"], "en"),
+                    new UserRating(new TitleIdentifiers(1, "tt001"), TitleKind.Movie, 10, DateTimeOffset.UtcNow)),
+                new LibraryItemSnapshot(
+                    new MovieEntry(new TitleIdentifiers(2, "tt002"), "Aliens", "Aliens", "Two", new DateOnly(1986, 7, 18), null, null, ["Action", "Science Fiction"], "en"),
+                    new UserRating(new TitleIdentifiers(2, "tt002"), TitleKind.Movie, 8, DateTimeOffset.UtcNow)),
+                new LibraryItemSnapshot(
+                    new MovieEntry(new TitleIdentifiers(3, "tt003"), "Hackers", "Hackers", "Three", new DateOnly(1995, 9, 15), null, null, ["Crime", "Thriller"], "en"),
+                    new UserRating(new TitleIdentifiers(3, "tt003"), TitleKind.Movie, 6, DateTimeOffset.UtcNow))
+            };
+        var repository = new FakeLibraryRepository(titles);
+        var tmdbClient = new FakeTmdbMetadataClient([]);
+        var viewModel = new MainWindowViewModel(
+            new DiscoveryWorkspaceService(repository, tmdbClient),
+            new ImdbCsvImportService(tmdbClient),
+            new FakeDialogService());
+
+        viewModel.ShowInsightsCommand.Execute(null);
+        await viewModel.RefreshAsync();
+
+        Assert.That(viewModel.IsInsightsMode, Is.True);
+        Assert.That(viewModel.TotalRatedValue, Is.EqualTo("3"));
+        Assert.That(viewModel.AverageRatingValue, Is.EqualTo("4.0/5"));
+        Assert.That(viewModel.RatingDistribution.Any(item => item.Label == "5★" && item.ValueText == "1"), Is.True);
+        Assert.That(viewModel.RatingByGenre.First().Label, Is.EqualTo("Science Fiction").Or.EqualTo("Action"));
+    }
+
     private sealed class FakeLibraryRepository : ILibraryRepository
     {
         private readonly List<LibraryItemSnapshot> m_searchResults;
@@ -234,6 +267,18 @@ public sealed class MainWindowViewModelTests
 
         public Task<IReadOnlyList<LibraryItemSnapshot>> GetWatchlistAsync(string query, TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>(m_searchResults.Take(maxResults).ToArray());
+
+        public Task<IReadOnlyList<RatedTitleInsight>> GetRatedTitleInsightsAsync(TitleKind kind, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<RatedTitleInsight>>(
+                m_searchResults
+                    .Where(snapshot => snapshot.Title.Kind == kind && snapshot.Rating != null)
+                    .Select(snapshot => new RatedTitleInsight(
+                        CatalogTitleKey.Create(snapshot.Title.Kind, snapshot.Title.Identifiers),
+                        snapshot.Title.Name,
+                        snapshot.Rating.ScoreOutOfTen,
+                        snapshot.Title.ReleaseYear,
+                        snapshot.Title.Genres ?? Array.Empty<string>()))
+                    .ToArray());
 
         public Task ResetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
