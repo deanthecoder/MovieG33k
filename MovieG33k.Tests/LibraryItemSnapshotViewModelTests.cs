@@ -63,4 +63,24 @@ public sealed class LibraryItemSnapshotViewModelTests
                 File.Delete(tempFile);
         }
     }
+
+    [Test]
+    public void SearchHitRowsDoNotShowABadge()
+    {
+        var title = new MovieEntry(
+            new TitleIdentifiers(5548, "tt0093870"),
+            "RoboCop",
+            "RoboCop",
+            "A cyborg lawman.",
+            new DateOnly(1987, 7, 17),
+            null,
+            null,
+            ["Action"],
+            "en");
+
+        var viewModel = new LibraryItemSnapshotViewModel(new LibraryItemSnapshot(title, SourceLabel: "Search hit"));
+
+        Assert.That(viewModel.HasBadgeText, Is.False);
+        Assert.That(viewModel.BadgeText, Is.Null.Or.Empty);
+    }
 }

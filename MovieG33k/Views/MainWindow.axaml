@@ -181,7 +181,8 @@
                               CornerRadius="999"
                               Background="#2200E5FF"
                               BorderBrush="#2A3A60"
-                              BorderThickness="1">
+                              BorderThickness="1"
+                              IsVisible="{Binding HasBadgeText}">
                         <TextBlock Classes="resultPrefix"
                                    Text="{Binding BadgeText}" />
                       </Border>

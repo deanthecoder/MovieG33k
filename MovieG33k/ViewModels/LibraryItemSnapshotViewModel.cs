@@ -28,6 +28,7 @@ public sealed class LibraryItemSnapshotViewModel : ViewModelBase
     private string m_subtitle;
     private string m_sourceLabel;
     private string m_badgeText;
+    private bool m_hasBadgeText;
     private string m_overview;
     private string m_personalState;
     private bool m_hasPersonalState;
@@ -88,6 +89,15 @@ public sealed class LibraryItemSnapshotViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Gets whether the row should show a badge at all.
+    /// </summary>
+    public bool HasBadgeText
+    {
+        get => m_hasBadgeText;
+        private set => SetField(ref m_hasBadgeText, value);
+    }
+
+    /// <summary>
     /// Gets the detail overview text.
     /// </summary>
     public string Overview
@@ -145,6 +155,7 @@ public sealed class LibraryItemSnapshotViewModel : ViewModelBase
         Subtitle = BuildSubtitle(snapshot);
         SourceLabel = snapshot.SourceLabel ?? "TMDb";
         BadgeText = BuildBadgeText(snapshot);
+        HasBadgeText = !string.IsNullOrWhiteSpace(BadgeText);
         Overview = string.IsNullOrWhiteSpace(snapshot.Title.Overview)
             ? "Overview not fetched yet."
             : snapshot.Title.Overview;
@@ -212,7 +223,9 @@ public sealed class LibraryItemSnapshotViewModel : ViewModelBase
         if (snapshot.WatchlistEntry != null)
             return "Pinned";
 
-        return snapshot.SourceLabel ?? "TMDb";
+        return string.Equals(snapshot.SourceLabel, "Popular now", StringComparison.OrdinalIgnoreCase)
+            ? snapshot.SourceLabel
+            : null;
     }
 
     private static int GetStarRating(UserRating rating) => (int)Math.Round(rating.ScoreOutOfTen / 2.0, MidpointRounding.AwayFromZero);
