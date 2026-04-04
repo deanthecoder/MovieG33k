@@ -237,6 +237,9 @@
                                TextWrapping="Wrap" />
                     <TextBlock Classes="launcherHint"
                                Text="{Binding SelectedSubtitle}" />
+                    <TextBlock Classes="launcherHint"
+                               IsVisible="{Binding HasSelectedRuntime}"
+                               Text="{Binding SelectedRuntimeLabel}" />
                     <Button Classes="neon"
                             Padding="10,6"
                             HorizontalAlignment="Left"

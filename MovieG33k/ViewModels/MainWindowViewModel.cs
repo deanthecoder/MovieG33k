@@ -169,6 +169,8 @@ public sealed class MainWindowViewModel : ViewModelBase
             OnPropertyChanged(nameof(SelectedRatingLabel));
             OnPropertyChanged(nameof(HasSelectedPublicRating));
             OnPropertyChanged(nameof(SelectedPublicRatingLabel));
+            OnPropertyChanged(nameof(HasSelectedRuntime));
+            OnPropertyChanged(nameof(SelectedRuntimeLabel));
             OnPropertyChanged(nameof(IsSelectedOnWatchlist));
             OnPropertyChanged(nameof(CanToggleWatchlist));
             OnPropertyChanged(nameof(WatchlistButtonLabel));
@@ -302,6 +304,13 @@ public sealed class MainWindowViewModel : ViewModelBase
         SelectedResult?.Snapshot.Title.PublicRating == null
             ? string.Empty
             : $"TMDb community rating: {SelectedResult.Snapshot.Title.PublicRating / 2m:0.0}/5";
+
+    public bool HasSelectedRuntime => TryGetSelectedRuntimeMinutes(out _);
+
+    public string SelectedRuntimeLabel =>
+        TryGetSelectedRuntimeMinutes(out var runtimeMinutes)
+            ? $"Runtime: {FormatRuntime(runtimeMinutes)}"
+            : string.Empty;
 
     public bool IsSelectedOnWatchlist => SelectedResult?.Snapshot.WatchlistEntry != null;
 
@@ -454,6 +463,38 @@ public sealed class MainWindowViewModel : ViewModelBase
         return await PosterHttpClient.GetStreamAsync(posterUrl, cancellationToken);
     }
 
+    private static HttpClient CreatePosterHttpClient()
+    {
+        var client = new HttpClient();
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("MovieG33k/1.0");
+        return client;
+    }
+
+    private bool TryGetSelectedRuntimeMinutes(out int runtimeMinutes)
+    {
+        if (SelectedResult?.Snapshot.Title is MovieEntry { RuntimeMinutes: > 0 } movieEntry)
+        {
+            runtimeMinutes = movieEntry.RuntimeMinutes.Value;
+            return true;
+        }
+
+        runtimeMinutes = 0;
+        return false;
+    }
+
+    private static string FormatRuntime(int runtimeMinutes)
+    {
+        var hours = runtimeMinutes / 60;
+        var minutes = runtimeMinutes % 60;
+
+        return hours <= 0
+            ? $"{minutes}m"
+            : minutes == 0
+                ? $"{hours}h"
+                : $"{hours}h {minutes}m";
+    }
+
     private async Task RateSelectedTitleAsync(object parameter)
     {
         if (SelectedResult == null || !TryGetStars(parameter, out var stars))
@@ -463,13 +504,6 @@ public sealed class MainWindowViewModel : ViewModelBase
         await RefreshResultsAsync();
     }
 
-    private static HttpClient CreatePosterHttpClient()
-    {
-        var client = new HttpClient();
-        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("MovieG33k/1.0");
-        return client;
-    }
     private async Task ToggleWatchlistAsync()
     {
         if (SelectedResult == null || !CanToggleWatchlist)
