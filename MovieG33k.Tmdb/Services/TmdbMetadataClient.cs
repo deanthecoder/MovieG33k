@@ -185,7 +185,29 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             if (!document.RootElement.TryGetProperty(resultProperty, out var resultArray) || resultArray.GetArrayLength() == 0)
                 return null;
 
-            return MapTitle(resultArray[0], kind);
+            var resolvedTitle = MapTitle(resultArray[0], kind);
+            if (resolvedTitle == null)
+                return null;
+
+            resolvedTitle = WithIdentifiers(
+                resolvedTitle,
+                resolvedTitle.Identifiers with
+                {
+                    ImdbId = imdbId
+                });
+
+            if (resolvedTitle.Identifiers.TmdbId is null)
+                return resolvedTitle;
+
+            var detailedTitle = await GetTitleDetailsAsync(resolvedTitle.Identifiers, kind, cancellationToken);
+            return detailedTitle == null
+                ? resolvedTitle
+                : WithIdentifiers(
+                    detailedTitle,
+                    detailedTitle.Identifiers with
+                    {
+                        ImdbId = imdbId
+                    });
         }
         catch (OperationCanceledException)
         {
@@ -424,6 +446,20 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             ? episodeCount
             : null;
     }
+
+    private static CatalogTitle WithIdentifiers(CatalogTitle title, TitleIdentifiers identifiers) =>
+        title switch
+        {
+            MovieEntry movie => movie with
+            {
+                Identifiers = identifiers
+            },
+            TvShowEntry tvShow => tvShow with
+            {
+                Identifiers = identifiers
+            },
+            _ => title
+        };
 
     private static CatalogTitle GetStubTitleDetails(TitleIdentifiers identifiers, TitleKind kind) =>
         GetStubTrendingResults(kind, 50)

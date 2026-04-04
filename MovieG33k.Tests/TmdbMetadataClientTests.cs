@@ -105,6 +105,28 @@ public sealed class TmdbMetadataClientTests
         Assert.That(handler.LastRequestUri, Does.Contain("append_to_response=release_dates"));
     }
 
+    [Test]
+    public async Task ResolveImdbIdAsyncFetchesFullDetailsAfterTheInitialFindResult()
+    {
+        var handler = new FindThenDetailsMessageHandler();
+        var client = new TmdbMetadataClient(new HttpClient(handler), new TmdbOptions
+        {
+            AccessToken = "private-access-token",
+            RegionCode = "GB"
+        });
+
+        var result = await client.ResolveImdbIdAsync("tt0093870", TitleKind.Movie);
+
+        Assert.That(result, Is.TypeOf<MovieEntry>());
+        Assert.That(result.Identifiers.ImdbId, Is.EqualTo("tt0093870"));
+        Assert.That(result.Identifiers.TmdbId, Is.EqualTo(5548));
+        Assert.That(result.Genres, Does.Contain("Action"));
+        Assert.That(((MovieEntry)result).RuntimeMinutes, Is.EqualTo(102));
+        Assert.That(handler.RequestUris, Has.Count.EqualTo(2));
+        Assert.That(handler.RequestUris[0], Does.Contain("/3/find/tt0093870"));
+        Assert.That(handler.RequestUris[1], Does.Contain("/3/movie/5548"));
+    }
+
     private sealed class CapturingMessageHandler : HttpMessageHandler
     {
         public string LastAuthorizationScheme { get; private set; }
@@ -171,6 +193,74 @@ public sealed class TmdbMetadataClientTests
                                 "iso_3166_1": "GB",
                                 "release_dates": [
                                   { "certification": "R" }
+                                ]
+                              }
+                            ]
+                          },
+                          "genres": [
+                            { "id": 28, "name": "Action" },
+                            { "id": 878, "name": "Science Fiction" }
+                          ]
+                        }
+                        """)
+                });
+        }
+    }
+
+    private sealed class FindThenDetailsMessageHandler : HttpMessageHandler
+    {
+        public List<string> RequestUris { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var requestUri = request.RequestUri?.ToString() ?? string.Empty;
+            RequestUris.Add(requestUri);
+
+            if (requestUri.Contains("/3/find/", StringComparison.Ordinal))
+            {
+                return Task.FromResult(
+                    new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent(
+                            """
+                            {
+                              "movie_results": [
+                                {
+                                  "id": 5548,
+                                  "title": "RoboCop",
+                                  "original_title": "RoboCop",
+                                  "overview": "Lightweight find result.",
+                                  "release_date": "1987-07-17",
+                                  "poster_path": "/esmAU0fCO28FbS6bUBKLAzJrohZ.jpg",
+                                  "original_language": "en"
+                                }
+                              ]
+                            }
+                            """)
+                    });
+            }
+
+            return Task.FromResult(
+                new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """
+                        {
+                          "id": 5548,
+                          "title": "RoboCop",
+                          "original_title": "RoboCop",
+                          "overview": "Part man. Part machine. All cop.",
+                          "release_date": "1987-07-17",
+                          "poster_path": "/esmAU0fCO28FbS6bUBKLAzJrohZ.jpg",
+                          "original_language": "en",
+                          "runtime": 102,
+                          "vote_average": 7.4,
+                          "release_dates": {
+                            "results": [
+                              {
+                                "iso_3166_1": "GB",
+                                "release_dates": [
+                                  { "certification": "18" }
                                 ]
                               }
                             ]
