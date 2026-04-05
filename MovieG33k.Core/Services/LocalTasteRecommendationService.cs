@@ -18,8 +18,12 @@ namespace MovieG33k.Core.Services;
 public sealed class LocalTasteRecommendationService : IRecommendationService
 {
     private const int CandidatePoolSize = 120;
-    private const int AgeRatingEnrichmentLimit = 80;
+    private const int MinimumAgeRatingEnrichmentLimit = 160;
+    private const int AgeRatingEnrichmentMultiplier = 4;
     private const int AgeRatingEnrichmentParallelism = 6;
+    private const double GenreAffinityMultiplier = 3.4d;
+    private const double DecadeAffinityMultiplier = 1.8d;
+    private const double PublicRatingMultiplier = 1.2d;
     private readonly ILibraryRepository m_libraryRepository;
     private readonly ITmdbMetadataClient m_tmdbMetadataClient;
 
@@ -75,7 +79,12 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
             .ToArray();
 
         if (ShouldEnrichAgeRatings(query))
-            snapshots = await EnrichMissingMovieAgeRatingsAsync(snapshots, cancellationToken);
+        {
+            var enrichmentLimit = Math.Min(
+                snapshots.Count,
+                Math.Max(query.MaxResults * AgeRatingEnrichmentMultiplier, MinimumAgeRatingEnrichmentLimit));
+            snapshots = await EnrichMissingMovieAgeRatingsAsync(snapshots, enrichmentLimit, cancellationToken);
+        }
 
         var filteredResults = snapshots
             .Where(snapshot => !HasUserAlreadyHandled(snapshot))
@@ -93,25 +102,52 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
         return filteredResults;
     }
 
-    private static Dictionary<string, double> BuildGenreAffinity(IReadOnlyList<RatedTitleInsight> ratedTitles) =>
-        ratedTitles
-            .SelectMany(title =>
-                (title.Genres?.Count > 0 ? title.Genres : Array.Empty<string>())
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Select(genre => new { Genre = genre, Score = title.ScoreOutOfTen / 2d }))
-            .GroupBy(entry => entry.Genre, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Average(entry => entry.Score),
-                StringComparer.OrdinalIgnoreCase);
+    private static Dictionary<string, double> BuildGenreAffinity(IReadOnlyList<RatedTitleInsight> ratedTitles)
+    {
+        var aggregates = new Dictionary<string, PreferenceAggregate>(StringComparer.OrdinalIgnoreCase);
 
-    private static Dictionary<int, double> BuildDecadeAffinity(IReadOnlyList<RatedTitleInsight> ratedTitles) =>
-        ratedTitles
-            .Where(title => title.ReleaseYear.HasValue)
-            .GroupBy(title => (title.ReleaseYear!.Value / 10) * 10)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Average(title => title.ScoreOutOfTen / 2d));
+        foreach (var title in ratedTitles)
+        {
+            var preference = GetPreferenceValue(title.ScoreOutOfTen);
+            var weight = GetPreferenceWeight(preference);
+            if (weight <= 0d)
+                continue;
+
+            foreach (var genre in (title.Genres?.Count > 0 ? title.Genres : Array.Empty<string>()).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                aggregates[genre] = aggregates.TryGetValue(genre, out var aggregate)
+                    ? aggregate.Add(preference, weight)
+                    : new PreferenceAggregate(preference * weight, weight);
+            }
+        }
+
+        return aggregates.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.Value,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static Dictionary<int, double> BuildDecadeAffinity(IReadOnlyList<RatedTitleInsight> ratedTitles)
+    {
+        var aggregates = new Dictionary<int, PreferenceAggregate>();
+
+        foreach (var title in ratedTitles.Where(title => title.ReleaseYear.HasValue))
+        {
+            var preference = GetPreferenceValue(title.ScoreOutOfTen);
+            var weight = GetPreferenceWeight(preference);
+            if (weight <= 0d)
+                continue;
+
+            var decade = (title.ReleaseYear!.Value / 10) * 10;
+            aggregates[decade] = aggregates.TryGetValue(decade, out var aggregate)
+                ? aggregate.Add(preference, weight)
+                : new PreferenceAggregate(preference * weight, weight);
+        }
+
+        return aggregates.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.Value);
+    }
 
     private static bool HasUserAlreadyHandled(LibraryItemSnapshot snapshot) =>
         snapshot.Rating != null ||
@@ -153,11 +189,12 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
 
     private async Task<IReadOnlyList<LibraryItemSnapshot>> EnrichMissingMovieAgeRatingsAsync(
         IReadOnlyList<LibraryItemSnapshot> snapshots,
+        int enrichmentLimit,
         CancellationToken cancellationToken)
     {
         var snapshotsToEnrich = snapshots
             .Where(snapshot => string.IsNullOrWhiteSpace(snapshot.Title.AgeRating))
-            .Take(AgeRatingEnrichmentLimit)
+            .Take(enrichmentLimit)
             .ToArray();
         if (snapshotsToEnrich.Length == 0)
             return snapshots;
@@ -234,6 +271,17 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
         };
     }
 
+    private static double GetPreferenceValue(int scoreOutOfTen) =>
+        Math.Clamp((scoreOutOfTen - 5d) / 5d, -1d, 1d);
+
+    private static double GetPreferenceWeight(double preference)
+    {
+        var intensity = Math.Abs(preference);
+        return intensity < 0.05d
+            ? 0d
+            : 0.35d + Math.Pow(intensity, 1.6d) * 1.65d;
+    }
+
     private static RecommendationCandidate ScoreCandidate(
         LibraryItemSnapshot snapshot,
         IReadOnlyDictionary<string, double> genreAffinity,
@@ -247,8 +295,9 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
             if (!genreAffinity.TryGetValue(genre, out var genreScore))
                 continue;
 
-            score += genreScore * 1.2d;
-            signals.Add(genre);
+            score += genreScore * GenreAffinityMultiplier;
+            if (genreScore > 0.12d)
+                signals.Add(genre);
         }
 
         if (snapshot.Title.ReleaseYear is int releaseYear)
@@ -256,14 +305,15 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
             var decade = (releaseYear / 10) * 10;
             if (decadeAffinity.TryGetValue(decade, out var decadeScore))
             {
-                score += decadeScore * 0.8d;
-                signals.Add($"{decade}s");
+                score += decadeScore * DecadeAffinityMultiplier;
+                if (decadeScore > 0.1d)
+                    signals.Add($"{decade}s");
             }
         }
 
         if (snapshot.Title.PublicRating is decimal publicRating)
         {
-            score += (double)(publicRating / 4m);
+            score += (double)(publicRating / 10m) * PublicRatingMultiplier;
             if (publicRating >= 7.5m)
                 signals.Add("Highly rated");
         }
@@ -282,5 +332,13 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
             score,
             distinctSignals.Length == 0 ? "Recommended" : string.Join(" • ", distinctSignals),
             distinctSignals);
+    }
+
+    private readonly record struct PreferenceAggregate(double WeightedPreferenceTotal, double WeightTotal)
+    {
+        public double Value => WeightTotal <= 0d ? 0d : WeightedPreferenceTotal / WeightTotal;
+
+        public PreferenceAggregate Add(double preference, double weight) =>
+            new(WeightedPreferenceTotal + preference * weight, WeightTotal + weight);
     }
 }

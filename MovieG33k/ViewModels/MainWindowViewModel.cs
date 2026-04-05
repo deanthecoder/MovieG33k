@@ -225,7 +225,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             if (!SetField(ref m_selectedRecommendationGenreOption, value))
                 return;
 
-            ResetResultLimitAndRefresh();
+            ResetResultLimitAndRefresh(selectFirstResult: true);
         }
     }
 
@@ -237,7 +237,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             if (!SetField(ref m_selectedRecommendationAgeRatingOption, value))
                 return;
 
-            ResetResultLimitAndRefresh();
+            ResetResultLimitAndRefresh(selectFirstResult: true);
         }
     }
 
@@ -858,10 +858,13 @@ public sealed class MainWindowViewModel : ViewModelBase
         return new LibraryItemSnapshotViewModel(snapshot, subtitle, personalState, badgeText);
     }
 
-    private void ResetResultLimitAndRefresh()
+    private void ResetResultLimitAndRefresh(bool selectFirstResult = false)
     {
         m_resultLimit = InitialResultLimit;
         CanLoadMore = false;
+        if (selectFirstResult)
+            SelectedResult = null;
+
         _ = RefreshResultsAsync();
     }
 

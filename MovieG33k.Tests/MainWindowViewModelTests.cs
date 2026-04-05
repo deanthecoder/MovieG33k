@@ -367,6 +367,58 @@ public sealed class MainWindowViewModelTests
         Assert.That(viewModel.SelectedResult.Title, Is.EqualTo("Hackers"));
     }
 
+    [Test]
+    public async Task ChangingRecommendationGenreFilterSelectsTheFirstResult()
+    {
+        var alien = new MovieEntry(
+            new TitleIdentifiers(348, "tt0078748"),
+            "Alien",
+            "Alien",
+            "One",
+            new DateOnly(1979, 5, 25),
+            null,
+            null,
+            ["Science Fiction", "Horror"],
+            "en");
+        var hackers = new MovieEntry(
+            new TitleIdentifiers(10428, "tt0113243"),
+            "Hackers",
+            "Hackers",
+            "Three",
+            new DateOnly(1995, 9, 15),
+            null,
+            null,
+            ["Crime"],
+            "en");
+        var recommendationService = new FakeRecommendationService(
+        [
+            new RecommendationCandidate(alien, 10, "Recommended", ["Science Fiction"]),
+            new RecommendationCandidate(hackers, 9, "Recommended", ["Crime"])
+        ]);
+        var tmdbClient = new FakeTmdbMetadataClient([]);
+        var viewModel = new MainWindowViewModel(
+            new DiscoveryWorkspaceService(new FakeLibraryRepository([]), tmdbClient),
+            recommendationService,
+            new ImdbCsvImportService(tmdbClient),
+            new FakeDialogService());
+
+        viewModel.ShowRecommendedCommand.Execute(null);
+        await viewModel.RefreshAsync();
+        viewModel.SelectedResult = viewModel.Results[1];
+
+        recommendationService.Results =
+        [
+            new RecommendationCandidate(hackers, 9, "Recommended", ["Crime"]),
+            new RecommendationCandidate(alien, 8, "Recommended", ["Science Fiction"])
+        ];
+
+        viewModel.SelectedRecommendationGenreOption = viewModel.RecommendationGenreOptions.First(option => option.DisplayName == "Horror");
+        await WaitForAsync(() => viewModel.SelectedResult?.Title == "Hackers");
+
+        Assert.That(viewModel.SelectedResult, Is.Not.Null);
+        Assert.That(viewModel.SelectedResult.Title, Is.EqualTo("Hackers"));
+    }
+
     private sealed class FakeLibraryRepository : ILibraryRepository
     {
         private readonly List<LibraryItemSnapshot> m_searchResults;
