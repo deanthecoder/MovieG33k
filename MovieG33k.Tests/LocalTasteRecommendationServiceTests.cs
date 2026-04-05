@@ -115,6 +115,87 @@ public sealed class LocalTasteRecommendationServiceTests
     }
 
     [Test]
+    public async Task GetRecommendationsAsyncBoostsCandidatesFromFavouredDirectors()
+    {
+        var totalRecall = new MovieEntry(
+            new TitleIdentifiers(861, "tt0100802"),
+            "Total Recall",
+            "Total Recall",
+            "One",
+            new DateOnly(1990, 6, 1),
+            null,
+            null,
+            ["Action", "Science Fiction"],
+            "en",
+            113,
+            7.5m,
+            "18",
+            ["Paul Verhoeven"]);
+        var speed = new MovieEntry(
+            new TitleIdentifiers(1637, "tt0111257"),
+            "Speed",
+            "Speed",
+            "Two",
+            new DateOnly(1994, 6, 10),
+            null,
+            null,
+            ["Action"],
+            "en",
+            116,
+            7.3m,
+            "15",
+            ["Jan de Bont"]);
+        var repository = new FakeLibraryRepository(
+            ratedInsights:
+            [
+                new RatedTitleInsight("movie:1", "RoboCop", 10, 1987, ["Action", "Science Fiction"], ["Paul Verhoeven"]),
+                new RatedTitleInsight("movie:2", "Starship Troopers", 9, 1997, ["Science Fiction"], ["Paul Verhoeven"])
+            ]);
+        var tmdbClient = new FakeTmdbMetadataClient([totalRecall, speed]);
+        var service = new LocalTasteRecommendationService(repository, tmdbClient);
+
+        var results = await service.GetRecommendationsAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB", 20));
+
+        Assert.That(results.Select(result => result.Title.Name).ToArray(), Is.EqualTo(new[] { "Total Recall", "Speed" }));
+        Assert.That(results[0].Signals, Does.Contain("Paul Verhoeven"));
+    }
+
+    [Test]
+    public async Task GetRecommendationsAsyncEnrichesCandidateDirectorsBeforeScoring()
+    {
+        var bareTotalRecall = (CatalogTitle)new MovieEntry(
+            new TitleIdentifiers(861, "tt0100802"),
+            "Total Recall",
+            "Total Recall",
+            "One",
+            new DateOnly(1990, 6, 1),
+            null,
+            null,
+            ["Action", "Science Fiction"],
+            "en",
+            113,
+            7.5m);
+        var detailedTotalRecall = (CatalogTitle)((MovieEntry)bareTotalRecall with
+        {
+            AgeRating = "18",
+            Directors = ["Paul Verhoeven"]
+        });
+        var repository = new FakeLibraryRepository(
+            ratedInsights:
+            [
+                new RatedTitleInsight("movie:1", "RoboCop", 10, 1987, ["Action", "Science Fiction"], ["Paul Verhoeven"])
+            ]);
+        var tmdbClient = new FakeTmdbMetadataClient([bareTotalRecall], [detailedTotalRecall]);
+        var service = new LocalTasteRecommendationService(repository, tmdbClient);
+
+        var results = await service.GetRecommendationsAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB", 20));
+
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0].Title.Directors, Does.Contain("Paul Verhoeven"));
+        Assert.That(results[0].Signals, Does.Contain("Paul Verhoeven"));
+    }
+
+    [Test]
     public async Task GetRecommendationsAsyncEnrichesEnoughAgeRatingsToFillTheFirstPage()
     {
         var discoverTitles = Enumerable.Range(1, 220)
@@ -172,8 +253,9 @@ public sealed class LocalTasteRecommendationServiceTests
             foreach (var title in titles)
             {
                 var key = CatalogTitleKey.Create(title.Kind, title.Identifiers);
-                if (!m_snapshotsByKey.ContainsKey(key))
-                    m_snapshotsByKey[key] = new LibraryItemSnapshot(title);
+                m_snapshotsByKey[key] = m_snapshotsByKey.TryGetValue(key, out var existingSnapshot)
+                    ? existingSnapshot with { Title = title }
+                    : new LibraryItemSnapshot(title);
             }
 
             return Task.CompletedTask;
@@ -193,6 +275,8 @@ public sealed class LocalTasteRecommendationServiceTests
         public Task<IReadOnlyList<LibraryItemSnapshot>> GetWatchedAsync(string query, TitleKind kind, int maxResults, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>([]);
         public Task<IReadOnlyList<LibraryItemSnapshot>> GetWatchlistAsync(string query, TitleKind kind, int maxResults, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>([]);
         public Task<IReadOnlyList<RatedTitleInsight>> GetRatedTitleInsightsAsync(TitleKind kind, CancellationToken cancellationToken = default) => Task.FromResult(m_ratedInsights);
+        public Task<IReadOnlyList<LibraryItemSnapshot>> GetRatedTitlesMissingMetadataAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>([]);
         public Task ResetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 

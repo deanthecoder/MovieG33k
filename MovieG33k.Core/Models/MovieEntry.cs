@@ -30,7 +30,8 @@ public sealed record MovieEntry(
     string OriginalLanguage,
     int? RuntimeMinutes = null,
     decimal? PublicRating = null,
-    string AgeRating = null)
+    string AgeRating = null,
+    IReadOnlyList<string> Directors = null)
     : CatalogTitle(
         Identifiers,
         TitleKind.Movie,
@@ -43,4 +44,5 @@ public sealed record MovieEntry(
         Genres,
         OriginalLanguage,
         PublicRating,
-        AgeRating);
+        AgeRating,
+        Directors);

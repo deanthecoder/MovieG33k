@@ -31,7 +31,8 @@ public sealed record TvShowEntry(
     int? SeasonCount = null,
     int? EpisodeCount = null,
     decimal? PublicRating = null,
-    string AgeRating = null)
+    string AgeRating = null,
+    IReadOnlyList<string> Directors = null)
     : CatalogTitle(
         Identifiers,
         TitleKind.TvShow,
@@ -44,4 +45,5 @@ public sealed record TvShowEntry(
         Genres,
         OriginalLanguage,
         PublicRating,
-        AgeRating);
+        AgeRating,
+        Directors);

@@ -102,7 +102,23 @@ public sealed class TmdbMetadataClientTests
         Assert.That(((MovieEntry)result).RuntimeMinutes, Is.EqualTo(102));
         Assert.That(result.Genres, Does.Contain("Action"));
         Assert.That(result.AgeRating, Is.EqualTo("R"));
-        Assert.That(handler.LastRequestUri, Does.Contain("append_to_response=release_dates"));
+        Assert.That(result.Directors, Does.Contain("Paul Verhoeven"));
+        Assert.That(handler.LastRequestUri, Does.Contain("append_to_response=release_dates%2Ccredits"));
+    }
+
+    [Test]
+    public async Task GetTitleDetailsAsyncMarksMovieAgeRatingAsUnknownWhenNoCertificationIsReturned()
+    {
+        var handler = new DetailsWithoutCertificationMessageHandler();
+        var client = new TmdbMetadataClient(new HttpClient(handler), new TmdbOptions
+        {
+            AccessToken = "private-access-token",
+            RegionCode = "GB"
+        });
+
+        var result = await client.GetTitleDetailsAsync(new TitleIdentifiers(214198, "tt0070607"), TitleKind.Movie);
+
+        Assert.That(result.AgeRating, Is.EqualTo(CatalogTitle.UnknownAgeRating));
     }
 
     [Test]
@@ -122,6 +138,7 @@ public sealed class TmdbMetadataClientTests
         Assert.That(result.Identifiers.TmdbId, Is.EqualTo(5548));
         Assert.That(result.Genres, Does.Contain("Action"));
         Assert.That(((MovieEntry)result).RuntimeMinutes, Is.EqualTo(102));
+        Assert.That(result.Directors, Does.Contain("Paul Verhoeven"));
         Assert.That(handler.RequestUris, Has.Count.EqualTo(2));
         Assert.That(handler.RequestUris[0], Does.Contain("/3/find/tt0093870"));
         Assert.That(handler.RequestUris[1], Does.Contain("/3/movie/5548"));
@@ -287,6 +304,12 @@ public sealed class TmdbMetadataClientTests
                               }
                             ]
                           },
+                          "credits": {
+                            "crew": [
+                              { "job": "Director", "name": "Paul Verhoeven" },
+                              { "job": "Writer", "name": "Edward Neumeier" }
+                            ]
+                          },
                           "genres": [
                             { "id": 28, "name": "Action" },
                             { "id": 878, "name": "Science Fiction" }
@@ -355,6 +378,11 @@ public sealed class TmdbMetadataClientTests
                               }
                             ]
                           },
+                          "credits": {
+                            "crew": [
+                              { "job": "Director", "name": "Paul Verhoeven" }
+                            ]
+                          },
                           "genres": [
                             { "id": 28, "name": "Action" },
                             { "id": 878, "name": "Science Fiction" }
@@ -363,6 +391,47 @@ public sealed class TmdbMetadataClientTests
                         """)
                 });
         }
+    }
+
+    private sealed class DetailsWithoutCertificationMessageHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(
+                new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """
+                        {
+                          "id": 214198,
+                          "title": "Rana: The Legend of Shadow Lake",
+                          "original_title": "Rana: The Legend of Shadow Lake",
+                          "overview": "Something stirs in the lake.",
+                          "release_date": "1981-01-01",
+                          "poster_path": "/poster-rana.jpg",
+                          "original_language": "en",
+                          "runtime": 89,
+                          "vote_average": 5.3,
+                          "release_dates": {
+                            "results": [
+                              {
+                                "iso_3166_1": "GB",
+                                "release_dates": [
+                                  { "certification": "" }
+                                ]
+                              }
+                            ]
+                          },
+                          "credits": {
+                            "crew": [
+                              { "job": "Director", "name": "Bill Rebane" }
+                            ]
+                          },
+                          "genres": [
+                            { "id": 27, "name": "Horror" }
+                          ]
+                        }
+                        """)
+                });
     }
 
     private sealed class PagedTrendingMessageHandler : HttpMessageHandler

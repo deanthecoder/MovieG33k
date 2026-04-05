@@ -192,6 +192,146 @@ public sealed class DiscoveryWorkspaceServiceTests
     }
 
     [Test]
+    public async Task RefreshMissingMetadataForRatedTitlesAsyncRefreshesAndCountsMatchingTitles()
+    {
+        var incompleteMovie = new MovieEntry(
+            new TitleIdentifiers(5548, "tt0093870"),
+            "RoboCop",
+            "RoboCop",
+            "Short summary.",
+            new DateOnly(1987, 7, 17),
+            "/poster.jpg",
+            null,
+            ["Action"],
+            "en",
+            102,
+            7.4m,
+            "18");
+        var incompleteTv = new TvShowEntry(
+            new TitleIdentifiers(1396, "tt0903747"),
+            "Breaking Bad",
+            "Breaking Bad",
+            "One chemistry teacher.",
+            new DateOnly(2008, 1, 20),
+            "/poster-tv.jpg",
+            null,
+            ["Drama"],
+            "en",
+            5,
+            62,
+            9.5m,
+            "18");
+        var detailedMovie = incompleteMovie with { Directors = ["Paul Verhoeven"] };
+        var detailedTv = incompleteTv with { Directors = ["Vince Gilligan"] };
+        var missingMetadataSnapshots = new[]
+        {
+            new LibraryItemSnapshot(incompleteMovie, new UserRating(incompleteMovie.Identifiers, TitleKind.Movie, 8, DateTimeOffset.UtcNow)),
+            new LibraryItemSnapshot(incompleteTv, new UserRating(incompleteTv.Identifiers, TitleKind.TvShow, 10, DateTimeOffset.UtcNow))
+        };
+        var repository = new FakeLibraryRepository(
+            [],
+            snapshotsMissingMetadata: missingMetadataSnapshots);
+        var tmdbClient = new FakeTmdbMetadataClient(
+            [],
+            detailsByKey: new Dictionary<string, CatalogTitle>(StringComparer.OrdinalIgnoreCase)
+            {
+                [CatalogTitleKey.Create(detailedMovie.Kind, detailedMovie.Identifiers)] = detailedMovie,
+                [CatalogTitleKey.Create(detailedTv.Kind, detailedTv.Identifiers)] = detailedTv
+            });
+        var service = new DiscoveryWorkspaceService(repository, tmdbClient);
+
+        var refreshedCount = await service.RefreshMissingMetadataForRatedTitlesAsync();
+
+        Assert.That(refreshedCount, Is.EqualTo(1));
+        Assert.That(repository.UpsertedTitles.Select(title => title.Name).ToArray(), Is.EquivalentTo(new[] { "RoboCop" }));
+    }
+
+    [Test]
+    public async Task RefreshMissingMetadataForRatedTitlesAsyncDoesNotRefreshTheSameTitlesAgainOnSecondRun()
+    {
+        var incompleteMovie = new MovieEntry(
+            new TitleIdentifiers(5548, "tt0093870"),
+            "RoboCop",
+            "RoboCop",
+            "Short summary.",
+            new DateOnly(1987, 7, 17),
+            "/poster.jpg",
+            null,
+            ["Action"],
+            "en");
+        var detailedMovie = incompleteMovie with
+        {
+            RuntimeMinutes = 102,
+            AgeRating = "18",
+            Directors = ["Paul Verhoeven"]
+        };
+        var repository = new FakeLibraryRepository(
+            [],
+            snapshotsMissingMetadata: [new LibraryItemSnapshot(incompleteMovie, new UserRating(incompleteMovie.Identifiers, TitleKind.Movie, 8, DateTimeOffset.UtcNow))],
+            snapshotsByKey: new Dictionary<string, LibraryItemSnapshot>(StringComparer.OrdinalIgnoreCase)
+            {
+                [CatalogTitleKey.Create(incompleteMovie.Kind, incompleteMovie.Identifiers)] = new(
+                    incompleteMovie,
+                    new UserRating(incompleteMovie.Identifiers, TitleKind.Movie, 8, DateTimeOffset.UtcNow))
+            });
+        var tmdbClient = new FakeTmdbMetadataClient(
+            [],
+            detailsByKey: new Dictionary<string, CatalogTitle>(StringComparer.OrdinalIgnoreCase)
+            {
+                [CatalogTitleKey.Create(detailedMovie.Kind, detailedMovie.Identifiers)] = detailedMovie
+            });
+        var service = new DiscoveryWorkspaceService(repository, tmdbClient);
+
+        var firstRunCount = await service.RefreshMissingMetadataForRatedTitlesAsync();
+        var secondRunCount = await service.RefreshMissingMetadataForRatedTitlesAsync();
+
+        Assert.That(firstRunCount, Is.EqualTo(1));
+        Assert.That(secondRunCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public async Task RefreshMissingMetadataForRatedTitlesAsyncReportsProgressForStartupFlow()
+    {
+        var incompleteMovie = new MovieEntry(
+            new TitleIdentifiers(5548, "tt0093870"),
+            "RoboCop",
+            "RoboCop",
+            "Short summary.",
+            new DateOnly(1987, 7, 17),
+            "/poster.jpg",
+            null,
+            ["Action"],
+            "en");
+        var detailedMovie = incompleteMovie with
+        {
+            RuntimeMinutes = 102,
+            AgeRating = "18",
+            Directors = ["Paul Verhoeven"]
+        };
+        var repository = new FakeLibraryRepository(
+            [],
+            snapshotsMissingMetadata: [new LibraryItemSnapshot(incompleteMovie, new UserRating(incompleteMovie.Identifiers, TitleKind.Movie, 8, DateTimeOffset.UtcNow))]);
+        var tmdbClient = new FakeTmdbMetadataClient(
+            [],
+            detailsByKey: new Dictionary<string, CatalogTitle>(StringComparer.OrdinalIgnoreCase)
+            {
+                [CatalogTitleKey.Create(detailedMovie.Kind, detailedMovie.Identifiers)] = detailedMovie
+            });
+        var service = new DiscoveryWorkspaceService(repository, tmdbClient);
+        var updates = new List<MetadataRefreshProgress>();
+        var progress = new RecordingProgress<MetadataRefreshProgress>(updates);
+
+        var refreshedCount = await service.RefreshMissingMetadataForRatedTitlesAsync(progress: progress);
+
+        Assert.That(refreshedCount, Is.EqualTo(1));
+        Assert.That(updates, Is.Not.Empty);
+        Assert.That(updates[0].TotalCount, Is.EqualTo(1));
+        Assert.That(updates[^1].ProcessedCount, Is.EqualTo(1));
+        Assert.That(updates[^1].RefreshedCount, Is.EqualTo(1));
+        Assert.That(updates[^1].CurrentTitle, Is.EqualTo("RoboCop"));
+    }
+
+    [Test]
     public async Task SaveRatingAsyncRemovesTheTitleFromTheWatchlist()
     {
         var title = new MovieEntry(
@@ -289,20 +429,25 @@ public sealed class DiscoveryWorkspaceServiceTests
         private readonly IReadOnlyList<LibraryItemSnapshot> m_searchResults;
         private readonly IReadOnlyList<LibraryItemSnapshot> m_watchedResults;
         private readonly IReadOnlyList<LibraryItemSnapshot> m_watchlistResults;
-        private readonly IReadOnlyDictionary<string, LibraryItemSnapshot> m_snapshotsByKey;
+        private readonly IReadOnlyList<LibraryItemSnapshot> m_seedSnapshotsMissingMetadata;
+        private readonly Dictionary<string, LibraryItemSnapshot> m_snapshotsByKey;
         private readonly IReadOnlyList<RatedTitleInsight> m_ratedInsights;
 
         public FakeLibraryRepository(
             IReadOnlyList<LibraryItemSnapshot> searchResults,
             IReadOnlyList<LibraryItemSnapshot> watchedResults = null,
             IReadOnlyList<LibraryItemSnapshot> watchlistResults = null,
+            IReadOnlyList<LibraryItemSnapshot> snapshotsMissingMetadata = null,
             IReadOnlyDictionary<string, LibraryItemSnapshot> snapshotsByKey = null,
             IReadOnlyList<RatedTitleInsight> ratedInsights = null)
         {
             m_searchResults = searchResults;
             m_watchedResults = watchedResults ?? searchResults;
             m_watchlistResults = watchlistResults ?? searchResults;
-            m_snapshotsByKey = snapshotsByKey ?? new Dictionary<string, LibraryItemSnapshot>(StringComparer.OrdinalIgnoreCase);
+            m_seedSnapshotsMissingMetadata = snapshotsMissingMetadata ?? Array.Empty<LibraryItemSnapshot>();
+            m_snapshotsByKey = snapshotsByKey == null
+                ? new Dictionary<string, LibraryItemSnapshot>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, LibraryItemSnapshot>(snapshotsByKey, StringComparer.OrdinalIgnoreCase);
             m_ratedInsights = ratedInsights ?? Array.Empty<RatedTitleInsight>();
         }
 
@@ -314,6 +459,16 @@ public sealed class DiscoveryWorkspaceServiceTests
         public Task UpsertTitlesAsync(IReadOnlyList<CatalogTitle> titles, CancellationToken cancellationToken = default)
         {
             UpsertedTitles.AddRange(titles);
+
+            foreach (var title in titles)
+            {
+                var catalogKey = CatalogTitleKey.Create(title.Kind, title.Identifiers);
+                if (m_snapshotsByKey.TryGetValue(catalogKey, out var existing))
+                    m_snapshotsByKey[catalogKey] = existing with { Title = title };
+                else
+                    m_snapshotsByKey[catalogKey] = new LibraryItemSnapshot(title);
+            }
+
             return Task.CompletedTask;
         }
 
@@ -349,7 +504,46 @@ public sealed class DiscoveryWorkspaceServiceTests
         public Task<IReadOnlyList<RatedTitleInsight>> GetRatedTitleInsightsAsync(TitleKind kind, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<RatedTitleInsight>>(m_ratedInsights);
 
+        public Task<IReadOnlyList<LibraryItemSnapshot>> GetRatedTitlesMissingMetadataAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default)
+        {
+            var seededResults = m_seedSnapshotsMissingMetadata.Where(snapshot => snapshot.Title.Kind == kind).ToArray();
+            if (seededResults.Length > 0)
+            {
+                seededResults = seededResults
+                    .Select(snapshot =>
+                    {
+                        var catalogKey = CatalogTitleKey.Create(snapshot.Title.Kind, snapshot.Title.Identifiers);
+                        return m_snapshotsByKey.TryGetValue(catalogKey, out var updatedSnapshot)
+                            ? updatedSnapshot
+                            : snapshot;
+                    })
+                    .Where(snapshot => HasMissingCoreMetadata(snapshot.Title))
+                    .Take(maxResults)
+                    .ToArray();
+                return Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>(seededResults);
+            }
+
+            var results = m_snapshotsByKey.Values
+                .Where(snapshot => snapshot.Title.Kind == kind)
+                .Where(snapshot => snapshot.Rating != null)
+                .Where(snapshot => HasMissingCoreMetadata(snapshot.Title))
+                .Take(maxResults)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>(results);
+        }
+
         public Task ResetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        private static bool HasMissingCoreMetadata(CatalogTitle title) =>
+            string.IsNullOrWhiteSpace(title.PosterPath) ||
+            (title.Kind == TitleKind.Movie && string.IsNullOrWhiteSpace(title.AgeRating)) ||
+            (title.Kind == TitleKind.Movie && (title.Directors == null || title.Directors.Count == 0)) ||
+            title is MovieEntry { RuntimeMinutes: null or <= 0 };
+    }
+
+    private sealed class RecordingProgress<T>(ICollection<T> sink) : IProgress<T>
+    {
+        public void Report(T value) => sink.Add(value);
     }
 
     private sealed class FakeTmdbMetadataClient : ITmdbMetadataClient

@@ -104,6 +104,14 @@ public interface ILibraryRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns recently rated titles that are still missing important cached metadata.
+    /// </summary>
+    Task<IReadOnlyList<LibraryItemSnapshot>> GetRatedTitlesMissingMetadataAsync(
+        TitleKind kind,
+        int maxResults,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Clears the local MovieG33k database so the app can start fresh.
     /// </summary>
     Task ResetAsync(CancellationToken cancellationToken = default);

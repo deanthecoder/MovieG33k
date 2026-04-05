@@ -359,6 +359,13 @@ public sealed class ReadmeScreenshotTests
                         snapshot.Title.Genres ?? Array.Empty<string>()))
                     .ToArray());
 
+        public Task<IReadOnlyList<LibraryItemSnapshot>> GetRatedTitlesMissingMetadataAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>(
+                m_sampleData.ByCatalogKey.Values
+                    .Where(snapshot => snapshot.Title.Kind == kind && snapshot.Rating != null)
+                    .Take(maxResults)
+                    .ToArray());
+
         public Task ResetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         private static IReadOnlyList<LibraryItemSnapshot> Filter(IReadOnlyList<LibraryItemSnapshot> source, string query, TitleKind kind, int maxResults)

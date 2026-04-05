@@ -11,12 +11,10 @@
 namespace MovieG33k.Core.Models;
 
 /// <summary>
-/// Carries the minimum title data needed to analyse the user's ratings.
+/// Reports progress while cached metadata is being refreshed in the background.
 /// </summary>
-public sealed record RatedTitleInsight(
-    string CatalogKey,
-    string Title,
-    int ScoreOutOfTen,
-    int? ReleaseYear,
-    IReadOnlyList<string> Genres,
-    IReadOnlyList<string> Directors = null);
+public sealed record MetadataRefreshProgress(
+    int ProcessedCount,
+    int TotalCount,
+    int RefreshedCount,
+    string CurrentTitle);

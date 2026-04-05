@@ -35,7 +35,8 @@ public sealed class SqliteLibraryRepositoryTests
                 ["Comedy"],
                 "en",
                 PublicRating: 7.0m,
-                AgeRating: "PG-13");
+                AgeRating: "PG-13",
+                Directors: ["Greta Gerwig"]);
 
             await repository.UpsertTitlesAsync([title]);
             await repository.UpsertRatingAsync(new UserRating(title.Identifiers, TitleKind.Movie, 8, DateTimeOffset.UtcNow));
@@ -48,6 +49,7 @@ public sealed class SqliteLibraryRepositoryTests
             Assert.That(results[0].Title.Name, Is.EqualTo("Barbie"));
             Assert.That(results[0].Title.PublicRating, Is.EqualTo(7.0m));
             Assert.That(results[0].Title.AgeRating, Is.EqualTo("PG-13"));
+            Assert.That(results[0].Title.Directors, Is.EquivalentTo(new[] { "Greta Gerwig" }));
             Assert.That(results[0].Rating?.ScoreOutOfTen, Is.EqualTo(8));
             Assert.That(results[0].WatchState?.Status, Is.EqualTo(WatchStatus.Watched));
             Assert.That(results[0].WatchlistEntry, Is.Not.Null);
@@ -198,7 +200,8 @@ public sealed class SqliteLibraryRepositoryTests
                 null,
                 null,
                 ["Action", "Science Fiction"],
-                "en");
+                "en",
+                Directors: ["Paul Verhoeven"]);
             var hackers = new MovieEntry(
                 new TitleIdentifiers(10428, "tt0113243"),
                 "Hackers",
@@ -219,7 +222,168 @@ public sealed class SqliteLibraryRepositoryTests
             Assert.That(results, Has.Count.EqualTo(2));
             Assert.That(results.Single(item => item.Title == "RoboCop").ReleaseYear, Is.EqualTo(1987));
             Assert.That(results.Single(item => item.Title == "RoboCop").Genres, Is.EquivalentTo(new[] { "Action", "Science Fiction" }));
+            Assert.That(results.Single(item => item.Title == "RoboCop").Directors, Is.EquivalentTo(new[] { "Paul Verhoeven" }));
             Assert.That(results.Single(item => item.Title == "Hackers").ScoreOutOfTen, Is.EqualTo(6));
+        }
+        finally
+        {
+            if (databaseFile.Exists)
+                databaseFile.Delete();
+        }
+    }
+
+    [Test]
+    public async Task GetRatedTitlesMissingMetadataAsyncDoesNotFlagTvShowsJustBecauseDirectorsAreMissing()
+    {
+        var databaseFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db"));
+
+        try
+        {
+            var repository = new SqliteLibraryRepository(databaseFile);
+            var breakingBad = new TvShowEntry(
+                new TitleIdentifiers(1396, "tt0903747"),
+                "Breaking Bad",
+                "Breaking Bad",
+                "One chemistry teacher.",
+                new DateOnly(2008, 1, 20),
+                "/poster.jpg",
+                null,
+                ["Drama"],
+                "en",
+                5,
+                62,
+                9.5m,
+                "18");
+
+            await repository.UpsertTitlesAsync([breakingBad]);
+            await repository.UpsertRatingAsync(new UserRating(breakingBad.Identifiers, TitleKind.TvShow, 10, DateTimeOffset.UtcNow));
+
+            var results = await repository.GetRatedTitlesMissingMetadataAsync(TitleKind.TvShow, 10);
+
+            Assert.That(results, Is.Empty);
+        }
+        finally
+        {
+            if (databaseFile.Exists)
+                databaseFile.Delete();
+        }
+    }
+
+    [Test]
+    public async Task GetRatedTitlesMissingMetadataAsyncDoesNotFlagTvShowsJustBecauseAgeRatingIsMissing()
+    {
+        var databaseFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db"));
+
+        try
+        {
+            var repository = new SqliteLibraryRepository(databaseFile);
+            var holbyCity = new TvShowEntry(
+                new TitleIdentifiers(1028, "tt0184122"),
+                "Holby City",
+                "Holby City",
+                "Hospital drama.",
+                new DateOnly(1999, 1, 12),
+                "/poster.jpg",
+                null,
+                ["Drama"],
+                "en",
+                23,
+                1102,
+                6.1m,
+                null,
+                ["Tony McHale"]);
+
+            await repository.UpsertTitlesAsync([holbyCity]);
+            await repository.UpsertRatingAsync(new UserRating(holbyCity.Identifiers, TitleKind.TvShow, 8, DateTimeOffset.UtcNow));
+
+            var results = await repository.GetRatedTitlesMissingMetadataAsync(TitleKind.TvShow, 10);
+
+            Assert.That(results, Is.Empty);
+        }
+        finally
+        {
+            if (databaseFile.Exists)
+                databaseFile.Delete();
+        }
+    }
+
+    [Test]
+    public async Task GetRatedTitlesMissingMetadataAsyncPrefersStaleMetadataOverRecentlyRefreshedRows()
+    {
+        var databaseFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db"));
+
+        try
+        {
+            var repository = new SqliteLibraryRepository(databaseFile);
+            var staleMovie = new MovieEntry(
+                new TitleIdentifiers(348, "tt0078748"),
+                "Alien",
+                "Alien",
+                "One",
+                new DateOnly(1979, 5, 25),
+                "/poster-alien.jpg",
+                null,
+                ["Science Fiction"],
+                "en");
+            var refreshedMovie = new MovieEntry(
+                new TitleIdentifiers(5548, "tt0093870"),
+                "RoboCop",
+                "RoboCop",
+                "Two",
+                new DateOnly(1987, 7, 17),
+                "/poster-robocop.jpg",
+                null,
+                ["Action"],
+                "en");
+
+            await repository.UpsertTitlesAsync([staleMovie, refreshedMovie]);
+            await repository.UpsertRatingAsync(new UserRating(staleMovie.Identifiers, TitleKind.Movie, 10, DateTimeOffset.UtcNow));
+            await repository.UpsertRatingAsync(new UserRating(refreshedMovie.Identifiers, TitleKind.Movie, 8, DateTimeOffset.UtcNow));
+
+            await Task.Delay(25);
+            await repository.UpsertTitlesAsync([refreshedMovie with { Directors = ["Paul Verhoeven"], AgeRating = "18", RuntimeMinutes = 102 }]);
+
+            var results = await repository.GetRatedTitlesMissingMetadataAsync(TitleKind.Movie, 10);
+
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0].Title.Name, Is.EqualTo("Alien"));
+        }
+        finally
+        {
+            if (databaseFile.Exists)
+                databaseFile.Delete();
+        }
+    }
+
+    [Test]
+    public async Task GetRatedTitlesMissingMetadataAsyncDoesNotFlagMoviesWhoseAgeRatingIsMarkedUnknown()
+    {
+        var databaseFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db"));
+
+        try
+        {
+            var repository = new SqliteLibraryRepository(databaseFile);
+            var incompleteMovie = new MovieEntry(
+                new TitleIdentifiers(214198, "tt0070607"),
+                "Rana: The Legend of Shadow Lake",
+                "Rana: The Legend of Shadow Lake",
+                "One",
+                new DateOnly(1981, 1, 1),
+                "/poster-rana.jpg",
+                null,
+                ["Horror"],
+                "en",
+                89,
+                null,
+                CatalogTitle.UnknownAgeRating,
+                ["Bill Rebane"]);
+
+            await repository.UpsertTitlesAsync([incompleteMovie]);
+            await repository.UpsertRatingAsync(new UserRating(incompleteMovie.Identifiers, TitleKind.Movie, 6, DateTimeOffset.UtcNow));
+
+            var results = await repository.GetRatedTitlesMissingMetadataAsync(TitleKind.Movie, 10);
+
+            Assert.That(results, Is.Empty);
         }
         finally
         {

@@ -469,7 +469,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public string RecommendationSummary =>
         CurrentMode switch
         {
-            LibraryViewMode.Recommended => "Recommendation signals are pulled from your ratings history and lightly balanced with TMDb scores.",
+            LibraryViewMode.Recommended => "Recommendation signals are pulled from your ratings history and lightly balanced with community ratings.",
             LibraryViewMode.Watched => "Your watched history and ratings will help MovieG33k learn what tends to work for you.",
             LibraryViewMode.Watchlist => "Pin likely candidates here first, then rate the ones you actually watch.",
             _ => "Search for something new, then pin or rate anything you want to keep."
@@ -516,7 +516,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public string SelectedPublicRatingLabel =>
         SelectedResult?.Snapshot.Title.PublicRating == null
             ? string.Empty
-            : $"TMDb community rating: {SelectedResult.Snapshot.Title.PublicRating / 2m:0.0}/5";
+            : $"Community rating: {SelectedResult.Snapshot.Title.PublicRating / 2m:0.0}/5";
 
     public bool HasSelectedRuntime => TryGetSelectedRuntimeMinutes(out _);
 
@@ -547,7 +547,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         SelectedResult?.Snapshot.Title.Identifiers.ImdbId is not null
             ? "Open this title in IMDb"
             : SelectedResult?.Snapshot.Title.Identifiers.TmdbId is not null
-                ? "Open this title in TMDb"
+                ? "Open this title online"
                 : "No external page is available for this title";
 
     public string Star1Glyph => GetStarGlyph(1);
@@ -966,9 +966,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         if (selectedSnapshot == null)
             return;
 
-        var shouldRefreshDetails =
-            selectedSnapshot.Title is MovieEntry { RuntimeMinutes: null or <= 0 } ||
-            string.IsNullOrWhiteSpace(selectedSnapshot.Title.PosterPath);
+        var shouldRefreshDetails = ShouldRefreshSelectedTitleDetails(selectedSnapshot.Title);
         if (!shouldRefreshDetails)
             return;
 
@@ -1019,6 +1017,12 @@ public sealed class MainWindowViewModel : ViewModelBase
             Logger.Instance.Exception($"Failed to refresh detailed metadata for '{selectedSnapshot.Title.Name}'.", ex);
         }
     }
+
+    private static bool ShouldRefreshSelectedTitleDetails(CatalogTitle title) =>
+        string.IsNullOrWhiteSpace(title.PosterPath) ||
+        (title.Kind == TitleKind.Movie && !title.HasKnownAgeRating) ||
+        (title.Kind == TitleKind.Movie && (title.Directors == null || title.Directors.Count == 0)) ||
+        title is MovieEntry { RuntimeMinutes: null or <= 0 };
 
     private static async Task<Stream> OpenPosterStreamAsync(string posterUrl, CancellationToken cancellationToken)
     {

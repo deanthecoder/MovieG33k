@@ -23,6 +23,7 @@ namespace MovieG33k.Core.Services;
 /// </remarks>
 public sealed class DiscoveryWorkspaceService
 {
+    private const int BackgroundRefreshParallelism = 3;
     private readonly ILibraryRepository m_libraryRepository;
     private readonly ITmdbMetadataClient m_tmdbMetadataClient;
 
@@ -289,7 +290,98 @@ public sealed class DiscoveryWorkspaceService
         var snapshotsByKey = await m_libraryRepository.GetByCatalogKeysAsync([catalogKey], cancellationToken);
         return snapshotsByKey.TryGetValue(catalogKey, out var snapshot)
             ? snapshot
-            : new LibraryItemSnapshot(detailedTitle, SourceLabel: "TMDb");
+            : new LibraryItemSnapshot(detailedTitle);
+    }
+
+    /// <summary>
+    /// Returns the current startup-sized batch of rated titles that still need richer metadata.
+    /// </summary>
+    public async Task<int> GetPendingMetadataRefreshCountAsync(
+        int maxResultsPerKind = 24,
+        CancellationToken cancellationToken = default)
+    {
+        if (!m_tmdbMetadataClient.IsConfigured)
+            return 0;
+
+        await m_libraryRepository.InitializeAsync(cancellationToken);
+
+        var movieSnapshots = await m_libraryRepository.GetRatedTitlesMissingMetadataAsync(TitleKind.Movie, maxResultsPerKind, cancellationToken);
+        var tvSnapshots = await m_libraryRepository.GetRatedTitlesMissingMetadataAsync(TitleKind.TvShow, maxResultsPerKind, cancellationToken);
+        return movieSnapshots
+            .Concat(tvSnapshots)
+            .Select(snapshot => CatalogTitleKey.Create(snapshot.Title.Kind, snapshot.Title.Identifiers))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+    }
+
+    /// <summary>
+    /// Background-refreshes recently rated titles that are still missing key metadata.
+    /// </summary>
+    public async Task<int> RefreshMissingMetadataForRatedTitlesAsync(
+        int maxResultsPerKind = 24,
+        IProgress<MetadataRefreshProgress> progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!m_tmdbMetadataClient.IsConfigured)
+        {
+            Logger.Instance.Info("Skipping background rated-title metadata refresh because TMDb is not configured.");
+            return 0;
+        }
+
+        await m_libraryRepository.InitializeAsync(cancellationToken);
+
+        var movieSnapshots = await m_libraryRepository.GetRatedTitlesMissingMetadataAsync(TitleKind.Movie, maxResultsPerKind, cancellationToken);
+        var tvSnapshots = await m_libraryRepository.GetRatedTitlesMissingMetadataAsync(TitleKind.TvShow, maxResultsPerKind, cancellationToken);
+        var pendingSnapshots = movieSnapshots
+            .Concat(tvSnapshots)
+            .GroupBy(snapshot => CatalogTitleKey.Create(snapshot.Title.Kind, snapshot.Title.Identifiers), StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray();
+
+        if (pendingSnapshots.Length == 0)
+        {
+            Logger.Instance.Info("Background rated-title metadata refresh found nothing to update.");
+            progress?.Report(new MetadataRefreshProgress(0, 0, 0, null));
+            return 0;
+        }
+
+        Logger.Instance.Info($"Starting background refresh for {pendingSnapshots.Length} rated titles with missing metadata.");
+        progress?.Report(new MetadataRefreshProgress(0, pendingSnapshots.Length, 0, null));
+
+        var semaphore = new SemaphoreSlim(BackgroundRefreshParallelism);
+        var refreshedCount = 0;
+        var processedCount = 0;
+
+        await Task.WhenAll(pendingSnapshots.Select(async snapshot =>
+        {
+            await semaphore.WaitAsync(cancellationToken);
+            try
+            {
+                var detailedTitle = await m_tmdbMetadataClient.GetTitleDetailsAsync(snapshot.Title.Identifiers, snapshot.Title.Kind, cancellationToken);
+                if (detailedTitle == null)
+                    return;
+
+                await m_libraryRepository.UpsertTitlesAsync([detailedTitle], cancellationToken);
+                Interlocked.Increment(ref refreshedCount);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.Exception($"Background metadata refresh failed for '{snapshot.Title.Name}'.", ex);
+            }
+            finally
+            {
+                var processed = Interlocked.Increment(ref processedCount);
+                progress?.Report(new MetadataRefreshProgress(processed, pendingSnapshots.Length, refreshedCount, snapshot.Title.Name));
+                semaphore.Release();
+            }
+        }));
+
+        Logger.Instance.Info($"Background rated-title metadata refresh completed. Refreshed {refreshedCount} titles.");
+        return refreshedCount;
     }
 
     /// <summary>

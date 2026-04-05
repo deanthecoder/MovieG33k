@@ -163,7 +163,7 @@ public sealed class LibraryItemSnapshotViewModel : ViewModelBase
         Snapshot = snapshot;
         Title = snapshot.Title.Name ?? "Untitled";
         Subtitle = m_subtitleOverride ?? BuildSubtitle(snapshot);
-        SourceLabel = snapshot.SourceLabel ?? "TMDb";
+        SourceLabel = snapshot.SourceLabel ?? string.Empty;
         BadgeText = m_badgeTextOverride ?? BuildBadgeText(snapshot);
         HasBadgeText = !string.IsNullOrWhiteSpace(BadgeText);
         Overview = string.IsNullOrWhiteSpace(snapshot.Title.Overview)
@@ -183,7 +183,7 @@ public sealed class LibraryItemSnapshotViewModel : ViewModelBase
     {
         var mediaLabel = snapshot.Title.Kind == TitleKind.Movie ? "Movie" : "TV";
         var yearText = snapshot.Title.ReleaseYear?.ToString() ?? "TBA";
-        var ageRatingText = string.IsNullOrWhiteSpace(snapshot.Title.AgeRating)
+        var ageRatingText = !snapshot.Title.HasKnownAgeRating
             ? null
             : snapshot.Title.AgeRating;
         var genreText = snapshot.Title.Genres?.Count > 0

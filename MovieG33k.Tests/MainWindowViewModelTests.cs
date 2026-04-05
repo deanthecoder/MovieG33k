@@ -139,6 +139,46 @@ public sealed class MainWindowViewModelTests
     }
 
     [Test]
+    public async Task SelectingATitleRefreshesDirectorsWhenOtherCoreDetailsAlreadyExist()
+    {
+        var initialTitle = new MovieEntry(
+            new TitleIdentifiers(5548, "tt0093870"),
+            "RoboCop",
+            "RoboCop",
+            "Short summary.",
+            new DateOnly(1987, 7, 17),
+            "/esmAU0fCO28FbS6bUBKLAzJrohZ.jpg",
+            null,
+            ["Action"],
+            "en",
+            102,
+            7.4m,
+            "18");
+        var detailedTitle = initialTitle with
+        {
+            Directors = ["Paul Verhoeven"]
+        };
+
+        var repository = new FakeLibraryRepository([
+            new LibraryItemSnapshot(initialTitle, SourceLabel: "Search hit")
+        ]);
+        var tmdbClient = new FakeTmdbMetadataClient([detailedTitle]);
+        var viewModel = new MainWindowViewModel(
+            new DiscoveryWorkspaceService(repository, tmdbClient),
+            new FakeRecommendationService([]),
+            new ImdbCsvImportService(tmdbClient),
+            new FakeDialogService());
+
+        await viewModel.RefreshAsync();
+        viewModel.SelectedResult = viewModel.Results[0];
+
+        await WaitForAsync(() =>
+            viewModel.SelectedResult?.Snapshot.Title.Directors?.Contains("Paul Verhoeven") == true);
+
+        Assert.That(viewModel.SelectedResult?.Snapshot.Title.Directors, Does.Contain("Paul Verhoeven"));
+    }
+
+    [Test]
     public async Task SelectedExternalLinkPrefersImdbWhenAvailable()
     {
         var title = new MovieEntry(
@@ -499,6 +539,13 @@ public sealed class MainWindowViewModelTests
                         snapshot.Rating.ScoreOutOfTen,
                         snapshot.Title.ReleaseYear,
                         snapshot.Title.Genres ?? Array.Empty<string>()))
+                    .ToArray());
+
+        public Task<IReadOnlyList<LibraryItemSnapshot>> GetRatedTitlesMissingMetadataAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>(
+                m_searchResults
+                    .Where(snapshot => snapshot.Title.Kind == kind && snapshot.Rating != null)
+                    .Take(maxResults)
                     .ToArray());
 
         public Task ResetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

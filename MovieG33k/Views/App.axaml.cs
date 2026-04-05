@@ -12,9 +12,11 @@ using System.Net.Http;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using DTC.Core;
 using DTC.Core.UI;
 using Material.Icons;
+using MovieG33k.Core.Models;
 using MovieG33k.Core.Services;
 using MovieG33k.Data.Services;
 using MovieG33k.Imdb.Services;
@@ -33,6 +35,7 @@ namespace MovieG33k.Views;
 /// </remarks>
 public class App : Application
 {
+    private const int MetadataRefreshStartupLimit = int.MaxValue;
     private HttpClient m_httpClient;
 
     public App() =>
@@ -89,6 +92,7 @@ public class App : Application
             {
                 mainWindow.Opened -= OnMainWindowOpened;
                 await EnsureTmdbCredentialsAsync(viewModel, tmdbOptions, settings);
+                await PromptForMetadataRefreshAsync(discoveryWorkspaceService);
             }
         }
 
@@ -124,9 +128,9 @@ public class App : Application
 
         var enteredCredential =
             await DialogService.Instance.ShowTextEntryAsync(
-                "Add your TMDb access token",
-                "MovieG33k uses TMDb for live search, discovery, and richer metadata. Paste your TMDb API Read Access Token below. If you only have the older API key, that works too. It will be saved on this device so you only need to do this once.",
-                watermark: "Paste TMDb access token or API key",
+                "Add your access token",
+                "MovieG33k uses an online movie database for live search, discovery, and richer metadata. Paste your access token below. If you only have the older API key, that works too. It will be saved on this device so you only need to do this once.",
+                watermark: "Paste access token or API key",
                 cancelButton: "Later",
                 actionButton: "Save",
                 icon: MaterialIconKind.KeyVariant);
@@ -156,5 +160,61 @@ public class App : Application
 
         settings.TmdbApiKey = trimmedCredential;
         settings.TmdbAccessToken = string.Empty;
+    }
+
+    private static async Task PromptForMetadataRefreshAsync(DiscoveryWorkspaceService discoveryWorkspaceService)
+    {
+        try
+        {
+            var pendingCount = await discoveryWorkspaceService.GetPendingMetadataRefreshCountAsync(MetadataRefreshStartupLimit);
+            if (pendingCount <= 0)
+                return;
+
+            Logger.Instance.Info($"Startup metadata check found {pendingCount} rated titles queued for refresh.");
+            var shouldRefresh = await ConfirmAsync(
+                "Metadata updates available",
+                pendingCount == 1
+                    ? "MovieG33k found 1 rated title that needs richer metadata. Updating now may take a little while. Do you want to continue?"
+                    : $"MovieG33k found {pendingCount} rated titles that need richer metadata. Updating now may take a little while. Do you want to continue?",
+                "Later",
+                "Update now");
+            if (!shouldRefresh)
+            {
+                Logger.Instance.Info("User skipped startup rated-title metadata refresh.");
+                return;
+            }
+
+            await Dispatcher.UIThread.InvokeAsync(static () => { }, DispatcherPriority.Background);
+
+            var progressToken = new ProgressToken();
+            progressToken.Progress = 0;
+            var progress = new Progress<MetadataRefreshProgress>(update =>
+            {
+                if (update == null || update.TotalCount <= 0)
+                    return;
+
+                progressToken.Progress = (int)Math.Round(update.ProcessedCount * 100d / update.TotalCount, MidpointRounding.AwayFromZero);
+            });
+
+            using (DialogService.Instance.ShowBusy("Updating rated title metadata...", progressToken))
+            {
+                await Dispatcher.UIThread.InvokeAsync(static () => { }, DispatcherPriority.Background);
+                Logger.Instance.Info("User accepted startup rated-title metadata refresh.");
+                var refreshedCount = await discoveryWorkspaceService.RefreshMissingMetadataForRatedTitlesAsync(MetadataRefreshStartupLimit, progress);
+                progressToken.Progress = 100;
+                Logger.Instance.Info($"Startup rated-title metadata refresh finished after updating {refreshedCount} titles.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Instance.Exception("Startup rated-title metadata refresh prompt failed.", ex);
+        }
+    }
+
+    private static Task<bool> ConfirmAsync(string title, string detail, string cancelButton, string actionButton)
+    {
+        var completionSource = new TaskCompletionSource<bool>();
+        DialogService.Instance.Warn(title, detail, cancelButton, actionButton, result => completionSource.TrySetResult(result), MaterialIconKind.Update);
+        return completionSource.Task;
     }
 }

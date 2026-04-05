@@ -76,6 +76,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                 poster_path TEXT NULL,
                 backdrop_path TEXT NULL,
                 genres TEXT NULL,
+                directors TEXT NULL,
                 original_language TEXT NULL,
                 public_rating REAL NULL,
                 age_rating TEXT NULL,
@@ -159,6 +160,16 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         {
         }
 
+        var directorsMigrationCommand = connection.CreateCommand();
+        directorsMigrationCommand.CommandText = "ALTER TABLE titles ADD COLUMN directors TEXT NULL;";
+        try
+        {
+            await directorsMigrationCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 1 && ex.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
+        {
+        }
+
         m_isInitialized = true;
         Logger.Instance.Info("MovieG33k SQLite database ready.");
     }
@@ -181,11 +192,11 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                 """
                 INSERT INTO titles (
                     catalog_key, kind, tmdb_id, imdb_id, name, original_name, overview,
-                    release_date, poster_path, backdrop_path, genres, original_language, public_rating, age_rating,
+                    release_date, poster_path, backdrop_path, genres, directors, original_language, public_rating, age_rating,
                     runtime_minutes, season_count, episode_count, updated_utc)
                 VALUES (
                     $catalogKey, $kind, $tmdbId, $imdbId, $name, $originalName, $overview,
-                    $releaseDate, $posterPath, $backdropPath, $genres, $originalLanguage, $publicRating, $ageRating,
+                    $releaseDate, $posterPath, $backdropPath, $genres, $directors, $originalLanguage, $publicRating, $ageRating,
                     $runtimeMinutes, $seasonCount, $episodeCount, $updatedUtc)
                 ON CONFLICT(catalog_key) DO UPDATE SET
                     tmdb_id = excluded.tmdb_id,
@@ -197,6 +208,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                     poster_path = excluded.poster_path,
                     backdrop_path = excluded.backdrop_path,
                     genres = excluded.genres,
+                    directors = excluded.directors,
                     original_language = excluded.original_language,
                     public_rating = excluded.public_rating,
                     age_rating = excluded.age_rating,
@@ -389,6 +401,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                 t.poster_path,
                 t.backdrop_path,
                 t.genres,
+                t.directors,
                 t.original_language,
                 t.public_rating,
                 t.age_rating,
@@ -477,6 +490,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                 t.poster_path,
                 t.backdrop_path,
                 t.genres,
+                t.directors,
                 t.original_language,
                 t.public_rating,
                 t.age_rating,
@@ -539,6 +553,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                 t.poster_path,
                 t.backdrop_path,
                 t.genres,
+                t.directors,
                 t.original_language,
                 t.public_rating,
                 t.age_rating,
@@ -621,6 +636,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                 t.poster_path,
                 t.backdrop_path,
                 t.genres,
+                t.directors,
                 t.original_language,
                 t.public_rating,
                 t.age_rating,
@@ -691,6 +707,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                 t.name,
                 t.release_date,
                 t.genres,
+                t.directors,
                 r.score_out_of_ten
             FROM titles t
             INNER JOIN user_ratings r ON r.catalog_key = t.catalog_key
@@ -710,14 +727,86 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
             var genres = reader.IsDBNull(reader.GetOrdinal("genres"))
                 ? Array.Empty<string>()
                 : reader.GetString(reader.GetOrdinal("genres")).Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var directors = reader.IsDBNull(reader.GetOrdinal("directors"))
+                ? Array.Empty<string>()
+                : reader.GetString(reader.GetOrdinal("directors")).Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
             results.Add(new RatedTitleInsight(
                 reader.GetString(reader.GetOrdinal("catalog_key")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.GetInt32(reader.GetOrdinal("score_out_of_ten")),
                 releaseYear,
-                genres));
+                genres,
+                directors));
         }
+
+        return results;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<LibraryItemSnapshot>> GetRatedTitlesMissingMetadataAsync(
+        TitleKind kind,
+        int maxResults,
+        CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync(cancellationToken);
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                t.catalog_key,
+                t.kind,
+                t.tmdb_id,
+                t.imdb_id,
+                t.name,
+                t.original_name,
+                t.overview,
+                t.release_date,
+                t.poster_path,
+                t.backdrop_path,
+                t.genres,
+                t.directors,
+                t.original_language,
+                t.public_rating,
+                t.age_rating,
+                t.runtime_minutes,
+                t.season_count,
+                t.episode_count,
+                r.score_out_of_ten,
+                r.notes AS rating_notes,
+                r.updated_utc,
+                ws.status,
+                ws.last_watched_utc,
+                ws.last_season_number,
+                ws.last_episode_number,
+                wl.added_utc,
+                wl.priority,
+                wl.notes AS watchlist_notes
+            FROM titles t
+            INNER JOIN user_ratings r ON r.catalog_key = t.catalog_key
+            LEFT JOIN watch_states ws ON ws.catalog_key = t.catalog_key
+            LEFT JOIN watchlist_entries wl ON wl.catalog_key = t.catalog_key
+            WHERE t.kind = $kind
+              AND (
+                    COALESCE(t.poster_path, '') = ''
+                    OR (t.kind = 'Movie' AND COALESCE(t.age_rating, '') = '')
+                    OR (t.kind = 'Movie' AND COALESCE(t.directors, '') = '')
+                    OR (t.kind = 'Movie' AND COALESCE(t.runtime_minutes, 0) <= 0)
+                  )
+            ORDER BY t.updated_utc ASC, t.name ASC
+            LIMIT $maxResults;
+            """;
+        command.Parameters.AddWithValue("$kind", kind.ToString());
+        command.Parameters.AddWithValue("$maxResults", maxResults);
+
+        var results = new List<LibraryItemSnapshot>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            results.Add(await ReadSnapshotAsync(connection, reader, cancellationToken));
 
         return results;
     }
@@ -760,6 +849,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         command.Parameters.AddWithValue("$posterPath", (object)title.PosterPath ?? DBNull.Value);
         command.Parameters.AddWithValue("$backdropPath", (object)title.BackdropPath ?? DBNull.Value);
         command.Parameters.AddWithValue("$genres", title.Genres == null ? DBNull.Value : string.Join('|', title.Genres));
+        command.Parameters.AddWithValue("$directors", title.Directors == null ? DBNull.Value : string.Join('|', title.Directors));
         command.Parameters.AddWithValue("$originalLanguage", (object)title.OriginalLanguage ?? DBNull.Value);
         command.Parameters.AddWithValue("$publicRating", title.PublicRating ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("$ageRating", (object)title.AgeRating ?? DBNull.Value);
@@ -797,6 +887,9 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         var genres = reader.IsDBNull(reader.GetOrdinal("genres"))
             ? Array.Empty<string>()
             : reader.GetString(reader.GetOrdinal("genres")).Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var directors = reader.IsDBNull(reader.GetOrdinal("directors"))
+            ? Array.Empty<string>()
+            : reader.GetString(reader.GetOrdinal("directors")).Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         DateOnly? releaseDate = reader.IsDBNull(reader.GetOrdinal("release_date"))
             ? null
             : DateOnly.Parse(reader.GetString(reader.GetOrdinal("release_date")), CultureInfo.InvariantCulture);
@@ -815,7 +908,8 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                     reader.IsDBNull(reader.GetOrdinal("original_language")) ? null : reader.GetString(reader.GetOrdinal("original_language")),
                     reader.IsDBNull(reader.GetOrdinal("runtime_minutes")) ? null : reader.GetInt32(reader.GetOrdinal("runtime_minutes")),
                     reader.IsDBNull(reader.GetOrdinal("public_rating")) ? null : reader.GetDecimal(reader.GetOrdinal("public_rating")),
-                    reader.IsDBNull(reader.GetOrdinal("age_rating")) ? null : reader.GetString(reader.GetOrdinal("age_rating")))
+                    reader.IsDBNull(reader.GetOrdinal("age_rating")) ? null : reader.GetString(reader.GetOrdinal("age_rating")),
+                    directors)
                 : new TvShowEntry(
                     identifiers,
                     reader.GetString(reader.GetOrdinal("name")),
@@ -829,7 +923,8 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                     reader.IsDBNull(reader.GetOrdinal("season_count")) ? null : reader.GetInt32(reader.GetOrdinal("season_count")),
                     reader.IsDBNull(reader.GetOrdinal("episode_count")) ? null : reader.GetInt32(reader.GetOrdinal("episode_count")),
                     reader.IsDBNull(reader.GetOrdinal("public_rating")) ? null : reader.GetDecimal(reader.GetOrdinal("public_rating")),
-                    reader.IsDBNull(reader.GetOrdinal("age_rating")) ? null : reader.GetString(reader.GetOrdinal("age_rating")));
+                    reader.IsDBNull(reader.GetOrdinal("age_rating")) ? null : reader.GetString(reader.GetOrdinal("age_rating")),
+                    directors);
 
         UserRating rating = null;
         if (!reader.IsDBNull(reader.GetOrdinal("score_out_of_ten")))

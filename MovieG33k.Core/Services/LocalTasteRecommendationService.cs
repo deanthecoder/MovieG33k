@@ -20,8 +20,11 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
     private const int CandidatePoolSize = 120;
     private const int MinimumAgeRatingEnrichmentLimit = 160;
     private const int AgeRatingEnrichmentMultiplier = 4;
+    private const int MinimumDirectorEnrichmentLimit = 80;
+    private const int DirectorEnrichmentMultiplier = 2;
     private const int AgeRatingEnrichmentParallelism = 6;
     private const double GenreAffinityMultiplier = 3.4d;
+    private const double DirectorAffinityMultiplier = 4.6d;
     private const double DecadeAffinityMultiplier = 1.8d;
     private const double PublicRatingMultiplier = 1.2d;
     private readonly ILibraryRepository m_libraryRepository;
@@ -50,6 +53,7 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
             return Array.Empty<RecommendationCandidate>();
 
         var genreAffinity = BuildGenreAffinity(ratedTitles);
+        var directorAffinity = BuildDirectorAffinity(ratedTitles);
         var decadeAffinity = BuildDecadeAffinity(ratedTitles);
 
         var candidateQuery = query with
@@ -78,12 +82,23 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
             })
             .ToArray();
 
-        if (ShouldEnrichAgeRatings(query))
+        var shouldEnrichAgeRatings = ShouldEnrichAgeRatings(query);
+        var shouldEnrichDirectors = ShouldEnrichDirectors(directorAffinity);
+        if (shouldEnrichAgeRatings || shouldEnrichDirectors)
         {
-            var enrichmentLimit = Math.Min(
-                snapshots.Count,
-                Math.Max(query.MaxResults * AgeRatingEnrichmentMultiplier, MinimumAgeRatingEnrichmentLimit));
-            snapshots = await EnrichMissingMovieAgeRatingsAsync(snapshots, enrichmentLimit, cancellationToken);
+            var ageRatingLimit = shouldEnrichAgeRatings
+                ? Math.Max(query.MaxResults * AgeRatingEnrichmentMultiplier, MinimumAgeRatingEnrichmentLimit)
+                : 0;
+            var directorLimit = shouldEnrichDirectors
+                ? Math.Max(query.MaxResults * DirectorEnrichmentMultiplier, MinimumDirectorEnrichmentLimit)
+                : 0;
+            var enrichmentLimit = Math.Min(snapshots.Count, Math.Max(ageRatingLimit, directorLimit));
+            snapshots = await EnrichRecommendationMetadataAsync(
+                snapshots,
+                enrichmentLimit,
+                shouldEnrichAgeRatings,
+                shouldEnrichDirectors,
+                cancellationToken);
         }
 
         var filteredResults = snapshots
@@ -91,7 +106,7 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
             .Where(snapshot => MatchesQuery(snapshot.Title, query.Query))
             .Where(snapshot => MatchesGenreFilter(snapshot.Title, query.GenreFilter))
             .Where(snapshot => MatchesAgeRatingFilter(snapshot.Title, query.AgeRatingFilter))
-            .Select(snapshot => ScoreCandidate(snapshot, genreAffinity, decadeAffinity))
+            .Select(snapshot => ScoreCandidate(snapshot, genreAffinity, directorAffinity, decadeAffinity))
             .Where(candidate => candidate != null)
             .OrderByDescending(candidate => candidate.Score)
             .ThenByDescending(candidate => candidate.Title.PublicRating ?? 0)
@@ -116,6 +131,31 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
             foreach (var genre in (title.Genres?.Count > 0 ? title.Genres : Array.Empty<string>()).Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 aggregates[genre] = aggregates.TryGetValue(genre, out var aggregate)
+                    ? aggregate.Add(preference, weight)
+                    : new PreferenceAggregate(preference * weight, weight);
+            }
+        }
+
+        return aggregates.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.Value,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static Dictionary<string, double> BuildDirectorAffinity(IReadOnlyList<RatedTitleInsight> ratedTitles)
+    {
+        var aggregates = new Dictionary<string, PreferenceAggregate>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var title in ratedTitles)
+        {
+            var preference = GetPreferenceValue(title.ScoreOutOfTen);
+            var weight = GetPreferenceWeight(preference);
+            if (weight <= 0d)
+                continue;
+
+            foreach (var director in (title.Directors?.Count > 0 ? title.Directors : Array.Empty<string>()).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                aggregates[director] = aggregates.TryGetValue(director, out var aggregate)
                     ? aggregate.Add(preference, weight)
                     : new PreferenceAggregate(preference * weight, weight);
             }
@@ -187,13 +227,20 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
         query.Kind == TitleKind.Movie &&
         !string.IsNullOrWhiteSpace(query.AgeRatingFilter);
 
-    private async Task<IReadOnlyList<LibraryItemSnapshot>> EnrichMissingMovieAgeRatingsAsync(
+    private static bool ShouldEnrichDirectors(IReadOnlyDictionary<string, double> directorAffinity) =>
+        directorAffinity.Any(pair => pair.Value > 0.12d);
+
+    private async Task<IReadOnlyList<LibraryItemSnapshot>> EnrichRecommendationMetadataAsync(
         IReadOnlyList<LibraryItemSnapshot> snapshots,
         int enrichmentLimit,
+        bool requireAgeRatings,
+        bool requireDirectors,
         CancellationToken cancellationToken)
     {
         var snapshotsToEnrich = snapshots
-            .Where(snapshot => string.IsNullOrWhiteSpace(snapshot.Title.AgeRating))
+            .Where(snapshot =>
+                (requireAgeRatings && snapshot.Title.Kind == TitleKind.Movie && string.IsNullOrWhiteSpace(snapshot.Title.AgeRating)) ||
+                (requireDirectors && (snapshot.Title.Directors == null || snapshot.Title.Directors.Count == 0)))
             .Take(enrichmentLimit)
             .ToArray();
         if (snapshotsToEnrich.Length == 0)
@@ -285,6 +332,7 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
     private static RecommendationCandidate ScoreCandidate(
         LibraryItemSnapshot snapshot,
         IReadOnlyDictionary<string, double> genreAffinity,
+        IReadOnlyDictionary<string, double> directorAffinity,
         IReadOnlyDictionary<int, double> decadeAffinity)
     {
         var score = 0d;
@@ -298,6 +346,16 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
             score += genreScore * GenreAffinityMultiplier;
             if (genreScore > 0.12d)
                 signals.Add(genre);
+        }
+
+        foreach (var director in snapshot.Title.Directors?.Distinct(StringComparer.OrdinalIgnoreCase) ?? Array.Empty<string>())
+        {
+            if (!directorAffinity.TryGetValue(director, out var directorScore))
+                continue;
+
+            score += directorScore * DirectorAffinityMultiplier;
+            if (directorScore > 0.14d)
+                signals.Add(director);
         }
 
         if (snapshot.Title.ReleaseYear is int releaseYear)

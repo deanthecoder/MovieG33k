@@ -9,6 +9,7 @@
 // THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND.
 
 using System.Collections.Generic;
+using System;
 
 namespace MovieG33k.Core.Models;
 
@@ -30,10 +31,20 @@ public abstract record CatalogTitle(
     IReadOnlyList<string> Genres,
     string OriginalLanguage,
     decimal? PublicRating = null,
-    string AgeRating = null)
+    string AgeRating = null,
+    IReadOnlyList<string> Directors = null)
 {
+    public const string UnknownAgeRating = "[Unknown]";
+
     /// <summary>
     /// Returns the release year when a release date is known.
     /// </summary>
     public int? ReleaseYear => ReleaseDate?.Year;
+
+    /// <summary>
+    /// Returns true when a user-visible age rating is known.
+    /// </summary>
+    public bool HasKnownAgeRating =>
+        !string.IsNullOrWhiteSpace(AgeRating) &&
+        !string.Equals(AgeRating, UnknownAgeRating, StringComparison.OrdinalIgnoreCase);
 }

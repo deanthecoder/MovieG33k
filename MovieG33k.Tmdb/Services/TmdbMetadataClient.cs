@@ -229,7 +229,7 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
         var requestUri = BuildRequestUri(path, new Dictionary<string, string>
         {
             ["language"] = m_options.Language,
-            ["append_to_response"] = kind == TitleKind.Movie ? "release_dates" : "content_ratings"
+            ["append_to_response"] = kind == TitleKind.Movie ? "release_dates,credits" : "content_ratings,credits"
         });
         Logger.Instance.Info($"Loading TMDb details for {kind} id '{identifiers.TmdbId}'.");
 
@@ -488,7 +488,8 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
                 element.TryGetProperty("original_language", out var languageElement) ? languageElement.GetString() : null,
                 TryGetRuntimeMinutes(element),
                 PublicRating: TryGetPublicRating(element),
-                AgeRating: TryGetAgeRating(element, kind, regionCode));
+                AgeRating: TryGetAgeRating(element, kind, regionCode),
+                Directors: GetDirectors(element, kind));
         }
 
         return new TvShowEntry(
@@ -504,7 +505,47 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             TryGetSeasonCount(element),
             TryGetEpisodeCount(element),
             PublicRating: TryGetPublicRating(element),
-            AgeRating: TryGetAgeRating(element, kind, regionCode));
+            AgeRating: TryGetAgeRating(element, kind, regionCode),
+            Directors: GetDirectors(element, kind));
+    }
+
+    private static IReadOnlyList<string> GetDirectors(JsonElement element, TitleKind kind)
+    {
+        var directors = new List<string>();
+
+        if (kind == TitleKind.Movie &&
+            element.TryGetProperty("credits", out var creditsElement) &&
+            creditsElement.TryGetProperty("crew", out var crewElement) &&
+            crewElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var crewMember in crewElement.EnumerateArray())
+            {
+                var job = crewMember.TryGetProperty("job", out var jobElement) ? jobElement.GetString() : null;
+                var name = crewMember.TryGetProperty("name", out var nameElement) ? nameElement.GetString() : null;
+                if (string.Equals(job, "Director", StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(name) &&
+                    !directors.Contains(name, StringComparer.OrdinalIgnoreCase))
+                {
+                    directors.Add(name.Trim());
+                }
+            }
+        }
+        else if (kind == TitleKind.TvShow &&
+                 element.TryGetProperty("created_by", out var createdByElement) &&
+                 createdByElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var creator in createdByElement.EnumerateArray())
+            {
+                var name = creator.TryGetProperty("name", out var nameElement) ? nameElement.GetString() : null;
+                if (!string.IsNullOrWhiteSpace(name) &&
+                    !directors.Contains(name, StringComparer.OrdinalIgnoreCase))
+                {
+                    directors.Add(name.Trim());
+                }
+            }
+        }
+
+        return directors;
     }
 
     private static string TryGetAgeRating(JsonElement element, TitleKind kind, string regionCode)
@@ -538,7 +579,7 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
                 }
             }
 
-            return fallbackCertification;
+            return fallbackCertification ?? CatalogTitle.UnknownAgeRating;
         }
 
         if (!element.TryGetProperty("content_ratings", out var contentRatingsElement) ||
@@ -562,7 +603,7 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             }
         }
 
-        return fallbackRating;
+        return fallbackRating ?? CatalogTitle.UnknownAgeRating;
     }
 
     private static decimal? TryGetPublicRating(JsonElement element)
