@@ -100,10 +100,11 @@ public sealed class TmdbMetadataClientTests
 
         Assert.That(result, Is.TypeOf<MovieEntry>());
         Assert.That(((MovieEntry)result).RuntimeMinutes, Is.EqualTo(102));
+        Assert.That(result.Identifiers.ImdbId, Is.EqualTo("tt0093870"));
         Assert.That(result.Genres, Does.Contain("Action"));
         Assert.That(result.AgeRating, Is.EqualTo("R"));
         Assert.That(result.Directors, Does.Contain("Paul Verhoeven"));
-        Assert.That(handler.LastRequestUri, Does.Contain("append_to_response=release_dates%2Ccredits"));
+        Assert.That(handler.LastRequestUri, Does.Contain("append_to_response=release_dates%2Ccredits%2Cexternal_ids"));
     }
 
     [Test]
@@ -294,6 +295,9 @@ public sealed class TmdbMetadataClientTests
                           "original_language": "en",
                           "runtime": 102,
                           "vote_average": 7.4,
+                          "external_ids": {
+                            "imdb_id": "tt0093870"
+                          },
                           "release_dates": {
                             "results": [
                               {
@@ -368,6 +372,9 @@ public sealed class TmdbMetadataClientTests
                           "original_language": "en",
                           "runtime": 102,
                           "vote_average": 7.4,
+                          "external_ids": {
+                            "imdb_id": "tt0093870"
+                          },
                           "release_dates": {
                             "results": [
                               {

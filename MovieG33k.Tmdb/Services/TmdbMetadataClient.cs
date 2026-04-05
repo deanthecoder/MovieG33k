@@ -207,7 +207,7 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
     }
 
     /// <inheritdoc />
-    public async Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default)
+    public async Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, string titleName = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(identifiers);
 
@@ -229,9 +229,12 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
         var requestUri = BuildRequestUri(path, new Dictionary<string, string>
         {
             ["language"] = m_options.Language,
-            ["append_to_response"] = kind == TitleKind.Movie ? "release_dates,credits" : "content_ratings,credits"
+            ["append_to_response"] = kind == TitleKind.Movie ? "release_dates,credits,external_ids" : "content_ratings,credits,external_ids"
         });
-        Logger.Instance.Info($"Loading TMDb details for {kind} id '{identifiers.TmdbId}'.");
+        Logger.Instance.Info(
+            string.IsNullOrWhiteSpace(titleName)
+                ? $"Loading TMDb details for {kind} id '{identifiers.TmdbId}'."
+                : $"Loading TMDb details for '{titleName}' ({kind} id '{identifiers.TmdbId}').");
 
         try
         {
@@ -301,7 +304,7 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
             if (resolvedTitle.Identifiers.TmdbId is null)
                 return resolvedTitle;
 
-            var detailedTitle = await GetTitleDetailsAsync(resolvedTitle.Identifiers, kind, cancellationToken);
+            var detailedTitle = await GetTitleDetailsAsync(resolvedTitle.Identifiers, kind, resolvedTitle.Name, cancellationToken);
             return detailedTitle == null
                 ? resolvedTitle
                 : WithIdentifiers(
@@ -464,7 +467,7 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
     {
         var identifiers = new TitleIdentifiers(
             element.TryGetProperty("id", out var idElement) ? idElement.GetInt32() : null,
-            null);
+            TryGetImdbId(element));
         var nameProperty = kind == TitleKind.Movie ? "title" : "name";
         var originalNameProperty = kind == TitleKind.Movie ? "original_title" : "original_name";
         var dateProperty = kind == TitleKind.Movie ? "release_date" : "first_air_date";
@@ -688,6 +691,27 @@ public sealed class TmdbMetadataClient : ITmdbMetadataClient
         return episodeCountElement.TryGetInt32(out var episodeCount)
             ? episodeCount
             : null;
+    }
+
+    private static string TryGetImdbId(JsonElement element)
+    {
+        if (element.TryGetProperty("external_ids", out var externalIdsElement) &&
+            externalIdsElement.ValueKind == JsonValueKind.Object &&
+            externalIdsElement.TryGetProperty("imdb_id", out var nestedImdbElement))
+        {
+            var nestedImdbId = nestedImdbElement.GetString();
+            if (!string.IsNullOrWhiteSpace(nestedImdbId))
+                return nestedImdbId.Trim();
+        }
+
+        if (element.TryGetProperty("imdb_id", out var imdbElement))
+        {
+            var imdbId = imdbElement.GetString();
+            if (!string.IsNullOrWhiteSpace(imdbId))
+                return imdbId.Trim();
+        }
+
+        return null;
     }
 
     private static CatalogTitle WithIdentifiers(CatalogTitle title, TitleIdentifiers identifiers) =>

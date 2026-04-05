@@ -283,7 +283,7 @@ public sealed class DiscoveryWorkspaceService
 
         await m_libraryRepository.InitializeAsync(cancellationToken);
         Logger.Instance.Info($"Refreshing detailed metadata for '{title.Name}' ({title.Kind}).");
-        var detailedTitle = await m_tmdbMetadataClient.GetTitleDetailsAsync(title.Identifiers, title.Kind, cancellationToken) ?? title;
+        var detailedTitle = await m_tmdbMetadataClient.GetTitleDetailsAsync(title.Identifiers, title.Kind, title.Name, cancellationToken) ?? title;
         await m_libraryRepository.UpsertTitlesAsync([detailedTitle], cancellationToken);
 
         var catalogKey = CatalogTitleKey.Create(detailedTitle.Kind, detailedTitle.Identifiers);
@@ -357,7 +357,7 @@ public sealed class DiscoveryWorkspaceService
             await semaphore.WaitAsync(cancellationToken);
             try
             {
-                var detailedTitle = await m_tmdbMetadataClient.GetTitleDetailsAsync(snapshot.Title.Identifiers, snapshot.Title.Kind, cancellationToken);
+                var detailedTitle = await m_tmdbMetadataClient.GetTitleDetailsAsync(snapshot.Title.Identifiers, snapshot.Title.Kind, snapshot.Title.Name, cancellationToken);
                 if (detailedTitle == null)
                     return;
 

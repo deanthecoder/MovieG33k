@@ -570,7 +570,7 @@ public sealed class DiscoveryWorkspaceServiceTests
         public Task<IReadOnlyList<CatalogTitle>> GetDiscoverAsync(DiscoveryQuery query, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<CatalogTitle>>(m_results.Where(result => result.Kind == query.Kind).Take(query.MaxResults).ToArray());
 
-        public Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default) =>
+        public Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, string titleName = null, CancellationToken cancellationToken = default) =>
             Task.FromResult(
                 m_detailsByKey.TryGetValue(CatalogTitleKey.Create(kind, identifiers), out var detailedTitle)
                     ? detailedTitle

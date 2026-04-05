@@ -547,7 +547,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         SelectedResult?.Snapshot.Title.Identifiers.ImdbId is not null
             ? "Open this title in IMDb"
             : SelectedResult?.Snapshot.Title.Identifiers.TmdbId is not null
-                ? "Open this title online"
+                ? "Open this title in TMDb"
                 : "No external page is available for this title";
 
     public string Star1Glyph => GetStarGlyph(1);

@@ -48,7 +48,7 @@ public interface ITmdbMetadataClient
     /// <summary>
     /// Loads richer metadata for a known title when available.
     /// </summary>
-    Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default);
+    Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, string titleName = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Resolves an IMDb identifier to a TMDb-backed title.

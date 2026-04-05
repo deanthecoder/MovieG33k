@@ -413,7 +413,7 @@ public sealed class ReadmeScreenshotTests
         public Task<IReadOnlyList<CatalogTitle>> GetDiscoverAsync(DiscoveryQuery query, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<CatalogTitle>>(m_titles.Where(title => title.Kind == query.Kind).Take(query.MaxResults).ToArray());
 
-        public Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default) =>
+        public Task<CatalogTitle> GetTitleDetailsAsync(TitleIdentifiers identifiers, TitleKind kind, string titleName = null, CancellationToken cancellationToken = default) =>
             Task.FromResult(
                 m_titles.FirstOrDefault(title =>
                     title.Kind == kind &&

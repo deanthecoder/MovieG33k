@@ -254,7 +254,7 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
             await semaphore.WaitAsync(cancellationToken);
             try
             {
-                var detailedTitle = await m_tmdbMetadataClient.GetTitleDetailsAsync(snapshot.Title.Identifiers, snapshot.Title.Kind, cancellationToken);
+                var detailedTitle = await m_tmdbMetadataClient.GetTitleDetailsAsync(snapshot.Title.Identifiers, snapshot.Title.Kind, snapshot.Title.Name, cancellationToken);
                 if (detailedTitle == null)
                     return;
 

@@ -161,7 +161,7 @@
                         ToolTip.Tip="Pinned to watch">
                   <materialIcons:MaterialIcon Width="20"
                                               Height="20"
-                                              Kind="EyeOutline" />
+                                              Kind="Bookmark" />
                 </Button>
                 <Button Classes="neon"
                         Width="42"
