@@ -8,7 +8,6 @@
 //
 // THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND.
 
-using System.IO;
 using MovieG33k.Core.Models;
 using MovieG33k.Data.Services;
 
@@ -164,7 +163,7 @@ public sealed class SqliteLibraryRepositoryTests
                 "18",
                 ["Paul Verhoeven"]);
             var sparseSearchMovie = new MovieEntry(
-                new TitleIdentifiers(5548, null),
+                new TitleIdentifiers(5548),
                 "RoboCop",
                 "RoboCop",
                 "Short search summary.",
@@ -542,7 +541,7 @@ public sealed class SqliteLibraryRepositoryTests
         {
             var repository = new SqliteLibraryRepository(databaseFile);
             var concertFilm = new MovieEntry(
-                new TitleIdentifiers(959935, null),
+                new TitleIdentifiers(959935),
                 "Hacken Lee Concert Hall",
                 "Hacken Lee Concert Hall",
                 "One",

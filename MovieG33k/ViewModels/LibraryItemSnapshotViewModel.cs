@@ -8,8 +8,6 @@
 //
 // THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND.
 
-using System.IO;
-using System.Linq;
 using DTC.Core.ViewModels;
 using MovieG33k.Core.Models;
 

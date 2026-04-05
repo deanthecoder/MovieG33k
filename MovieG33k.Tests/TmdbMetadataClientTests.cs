@@ -9,8 +9,6 @@
 // THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND.
 
 using System.Net;
-using System.Net.Http;
-using System.Threading;
 using MovieG33k.Core.Models;
 using MovieG33k.Tmdb.Models;
 using MovieG33k.Tmdb.Services;

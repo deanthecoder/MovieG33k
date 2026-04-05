@@ -19,7 +19,7 @@ public static class AvaloniaTestSetup
 {
     public static AppBuilder BuildAvaloniaApp()
     {
-        return AppBuilder.Configure<MovieG33k.Views.App>()
+        return AppBuilder.Configure<Views.App>()
             .UseSkia()
             .UseHeadless(new AvaloniaHeadlessPlatformOptions
             {

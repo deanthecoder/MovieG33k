@@ -8,7 +8,6 @@
 //
 // THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND.
 
-using System.Net.Http;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
@@ -186,8 +185,10 @@ public class App : Application
 
             await Dispatcher.UIThread.InvokeAsync(static () => { }, DispatcherPriority.Background);
 
-            var progressToken = new ProgressToken();
-            progressToken.Progress = 0;
+            var progressToken = new ProgressToken
+            {
+                Progress = 0
+            };
             var progress = new Progress<MetadataRefreshProgress>(update =>
             {
                 if (update == null || update.TotalCount <= 0)
@@ -196,8 +197,8 @@ public class App : Application
                 progressToken.Progress = (int)Math.Round(update.ProcessedCount * 100d / update.TotalCount, MidpointRounding.AwayFromZero);
             });
 
-            var refreshedCount = 0;
-            var remainingCount = 0;
+            int refreshedCount;
+            int remainingCount;
             using (DialogService.Instance.ShowBusy("Updating title metadata...", progressToken))
             {
                 await Dispatcher.UIThread.InvokeAsync(static () => { }, DispatcherPriority.Background);

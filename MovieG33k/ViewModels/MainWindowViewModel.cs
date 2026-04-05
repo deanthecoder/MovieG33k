@@ -11,11 +11,8 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
-using System.IO;
-using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Windows.Input;
-using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -1237,8 +1234,10 @@ public sealed class MainWindowViewModel : ViewModelBase
         if (selectedFile == null)
             return;
 
-        var progressToken = new ProgressToken();
-        progressToken.Progress = 0;
+        var progressToken = new ProgressToken
+        {
+            Progress = 0
+        };
 
         var progress = new Progress<ImdbImportProgress>(update =>
         {

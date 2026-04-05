@@ -9,7 +9,6 @@
 // THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND.
 
 using System.Globalization;
-using System.IO;
 using DTC.Core;
 using Microsoft.Data.Sqlite;
 using MovieG33k.Core.Models;
@@ -471,7 +470,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         var results = new List<LibraryItemSnapshot>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
-            results.Add(await ReadSnapshotAsync(connection, reader, cancellationToken));
+            results.Add(await ReadSnapshotAsync(reader));
 
         return results;
     }
@@ -541,7 +540,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var snapshot = await ReadSnapshotAsync(connection, reader, cancellationToken);
+            var snapshot = await ReadSnapshotAsync(reader);
             results[CatalogTitleKey.Create(snapshot.Title.Kind, snapshot.Title.Identifiers)] = snapshot;
         }
 
@@ -627,7 +626,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         var results = new List<LibraryItemSnapshot>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
-            results.Add(await ReadSnapshotAsync(connection, reader, cancellationToken));
+            results.Add(await ReadSnapshotAsync(reader));
 
         return results;
     }
@@ -709,7 +708,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         var results = new List<LibraryItemSnapshot>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
-            results.Add(await ReadSnapshotAsync(connection, reader, cancellationToken));
+            results.Add(await ReadSnapshotAsync(reader));
 
         return results;
     }
@@ -750,10 +749,10 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                     ? null
                     : DateOnly.Parse(reader.GetString(reader.GetOrdinal("release_date")), CultureInfo.InvariantCulture).Year;
             var genres = reader.IsDBNull(reader.GetOrdinal("genres"))
-                ? Array.Empty<string>()
+                ? []
                 : reader.GetString(reader.GetOrdinal("genres")).Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             var directors = reader.IsDBNull(reader.GetOrdinal("directors"))
-                ? Array.Empty<string>()
+                ? []
                 : reader.GetString(reader.GetOrdinal("directors")).Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
             results.Add(new RatedTitleInsight(
@@ -832,7 +831,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         var results = new List<LibraryItemSnapshot>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
-            results.Add(await ReadSnapshotAsync(connection, reader, cancellationToken));
+            results.Add(await ReadSnapshotAsync(reader));
 
         return results;
     }
@@ -901,7 +900,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         var results = new List<LibraryItemSnapshot>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
-            results.Add(await ReadSnapshotAsync(connection, reader, cancellationToken));
+            results.Add(await ReadSnapshotAsync(reader));
 
         return results;
     }
@@ -1024,7 +1023,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
             .Select(value => value.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray()
-        ?? Array.Empty<string>();
+        ?? [];
 
     private static void AddTitleParameters(SqliteCommand command, CatalogTitle title)
     {
@@ -1065,20 +1064,17 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         }
     }
 
-    private static async Task<LibraryItemSnapshot> ReadSnapshotAsync(
-        SqliteConnection connection,
-        SqliteDataReader reader,
-        CancellationToken cancellationToken)
+    private static async Task<LibraryItemSnapshot> ReadSnapshotAsync(SqliteDataReader reader)
     {
         var kind = Enum.Parse<TitleKind>(reader.GetString(reader.GetOrdinal("kind")));
         var identifiers = new TitleIdentifiers(
             reader.IsDBNull(reader.GetOrdinal("tmdb_id")) ? null : reader.GetInt32(reader.GetOrdinal("tmdb_id")),
             reader.IsDBNull(reader.GetOrdinal("imdb_id")) ? null : reader.GetString(reader.GetOrdinal("imdb_id")));
         var genres = reader.IsDBNull(reader.GetOrdinal("genres"))
-            ? Array.Empty<string>()
+            ? []
             : reader.GetString(reader.GetOrdinal("genres")).Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var directors = reader.IsDBNull(reader.GetOrdinal("directors"))
-            ? Array.Empty<string>()
+            ? []
             : reader.GetString(reader.GetOrdinal("directors")).Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         DateOnly? releaseDate = reader.IsDBNull(reader.GetOrdinal("release_date"))
             ? null
@@ -1152,6 +1148,6 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                 reader.IsDBNull(reader.GetOrdinal("watchlist_notes")) ? null : reader.GetString(reader.GetOrdinal("watchlist_notes")));
         }
 
-        return new LibraryItemSnapshot(title, rating, watchState, watchlistEntry, Array.Empty<ProviderAvailability>());
+        return new LibraryItemSnapshot(title, rating, watchState, watchlistEntry, []);
     }
 }

@@ -35,7 +35,7 @@ public sealed class LocalTasteRecommendationServiceTests
         var tmdbClient = new FakeTmdbMetadataClient([alien, robocop, hackers]);
         var service = new LocalTasteRecommendationService(repository, tmdbClient);
 
-        var results = await service.GetRecommendationsAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB", 20));
+        var results = await service.GetRecommendationsAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB"));
 
         Assert.That(results.Select(result => result.Title.Name).ToArray(), Is.EqualTo(new[] { "Alien" }));
     }
@@ -53,7 +53,7 @@ public sealed class LocalTasteRecommendationServiceTests
         var tmdbClient = new FakeTmdbMetadataClient([alien, robocop]);
         var service = new LocalTasteRecommendationService(repository, tmdbClient);
 
-        var results = await service.GetRecommendationsAsync(new DiscoveryQuery("horror", TitleKind.Movie, "GB", 20));
+        var results = await service.GetRecommendationsAsync(new DiscoveryQuery("horror", TitleKind.Movie, "GB"));
 
         Assert.That(results.Select(result => result.Title.Name).ToArray(), Is.EqualTo(new[] { "Alien" }));
     }
@@ -71,7 +71,7 @@ public sealed class LocalTasteRecommendationServiceTests
         var tmdbClient = new FakeTmdbMetadataClient([alien, robocop]);
         var service = new LocalTasteRecommendationService(repository, tmdbClient);
 
-        var results = await service.GetRecommendationsAsync(new DiscoveryQuery("Ridley", TitleKind.Movie, "GB", 20));
+        var results = await service.GetRecommendationsAsync(new DiscoveryQuery("Ridley", TitleKind.Movie, "GB"));
 
         Assert.That(results.Select(result => result.Title.Name).ToArray(), Is.EqualTo(new[] { "Alien" }));
     }
@@ -89,7 +89,7 @@ public sealed class LocalTasteRecommendationServiceTests
         var tmdbClient = new FakeTmdbMetadataClient([alien, robocop]);
         var service = new LocalTasteRecommendationService(repository, tmdbClient);
 
-        var results = await service.GetRecommendationsAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB", 20, GenreFilter: "Horror"));
+        var results = await service.GetRecommendationsAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB", GenreFilter: "Horror"));
 
         Assert.That(results.Select(result => result.Title.Name).ToArray(), Is.EqualTo(new[] { "Alien" }));
     }
@@ -108,7 +108,7 @@ public sealed class LocalTasteRecommendationServiceTests
         var tmdbClient = new FakeTmdbMetadataClient([alien, robocop, paddington]);
         var service = new LocalTasteRecommendationService(repository, tmdbClient);
 
-        var results = await service.GetRecommendationsAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB", 20, AgeRatingFilter: "15+"));
+        var results = await service.GetRecommendationsAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB", AgeRatingFilter: "15+"));
 
         Assert.That(results.Select(result => result.Title.Name).ToArray(), Is.EquivalentTo(new[] { "Alien", "RoboCop" }));
     }
@@ -127,7 +127,7 @@ public sealed class LocalTasteRecommendationServiceTests
         var tmdbClient = new FakeTmdbMetadataClient([scream, gattaca]);
         var service = new LocalTasteRecommendationService(repository, tmdbClient);
 
-        var results = await service.GetRecommendationsAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB", 20));
+        var results = await service.GetRecommendationsAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB"));
 
         Assert.That(results.Select(result => result.Title.Name).ToArray(), Is.EqualTo(new[] { "Gattaca" }));
     }
@@ -172,7 +172,7 @@ public sealed class LocalTasteRecommendationServiceTests
         var tmdbClient = new FakeTmdbMetadataClient([totalRecall, speed]);
         var service = new LocalTasteRecommendationService(repository, tmdbClient);
 
-        var results = await service.GetRecommendationsAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB", 20));
+        var results = await service.GetRecommendationsAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB"));
 
         Assert.That(results.Select(result => result.Title.Name).ToArray(), Is.EqualTo(new[] { "Total Recall", "Speed" }));
         Assert.That(results[0].Signals, Does.Contain("Paul Verhoeven"));
@@ -206,7 +206,7 @@ public sealed class LocalTasteRecommendationServiceTests
         var tmdbClient = new FakeTmdbMetadataClient([bareTotalRecall], [detailedTotalRecall]);
         var service = new LocalTasteRecommendationService(repository, tmdbClient);
 
-        var results = await service.GetRecommendationsAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB", 20));
+        var results = await service.GetRecommendationsAsync(new DiscoveryQuery(string.Empty, TitleKind.Movie, "GB"));
 
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].Title.Directors, Does.Contain("Paul Verhoeven"));
@@ -228,8 +228,7 @@ public sealed class LocalTasteRecommendationServiceTests
                 ["Horror"],
                 "en",
                 100,
-                7.0m,
-                null))
+                7.0m))
             .ToArray();
         var detailedTitles = discoverTitles
             .Cast<MovieEntry>()

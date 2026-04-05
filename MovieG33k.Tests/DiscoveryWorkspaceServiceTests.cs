@@ -614,7 +614,7 @@ public sealed class DiscoveryWorkspaceServiceTests
             Task.FromResult(m_watchlistResults);
 
         public Task<IReadOnlyList<RatedTitleInsight>> GetRatedTitleInsightsAsync(TitleKind kind, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<RatedTitleInsight>>(m_ratedInsights);
+            Task.FromResult(m_ratedInsights);
 
         public Task<IReadOnlyList<LibraryItemSnapshot>> GetTitlesMissingMetadataAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default)
         {
