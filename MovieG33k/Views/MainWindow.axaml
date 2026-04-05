@@ -494,105 +494,204 @@
 
             <Grid IsVisible="{Binding HasInsights}"
                   ColumnDefinitions="0.95*,1.05*">
-              <Border Classes="searchSurface"
-                      Margin="0,0,18,0">
-                <StackPanel Spacing="14">
-                  <TextBlock Classes="launcherEyebrow"
-                             FontSize="12"
-                             Text="RATING DISTRIBUTION" />
-                  <ItemsControl ItemsSource="{Binding RatingDistribution}">
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="viewModels:InsightsBarViewModel">
-                        <StackPanel Margin="0,0,0,10"
-                                    Spacing="6">
-                          <Grid ColumnDefinitions="Auto,*,Auto">
-                            <TextBlock Text="{Binding Label}" />
-                            <TextBlock Grid.Column="2"
-                                       Classes="launcherHint"
-                                       Text="{Binding ValueText}" />
-                          </Grid>
-                          <ProgressBar Height="8"
-                                       Minimum="0"
-                                       Maximum="100"
-                                       Value="{Binding Percent}"
-                                       Foreground="#F4C94A"
-                                       Background="#1AFFFFFF"
-                                       ShowProgressText="False" />
-                        </StackPanel>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                </StackPanel>
-              </Border>
+              <StackPanel Spacing="18"
+                          Margin="0,0,18,0">
+                <Border Classes="searchSurface">
+                  <StackPanel Spacing="14">
+                    <TextBlock Classes="launcherEyebrow"
+                               FontSize="12"
+                               Text="GENRE SHARE" />
+                    <Grid ColumnDefinitions="Auto,*"
+                          IsVisible="{Binding HasGenreShare}">
+                      <Grid Width="180"
+                            Height="180"
+                            Margin="0,0,18,0">
+                        <Ellipse Width="180"
+                                 Height="180"
+                                 Fill="#1200E5FF" />
+                        <ItemsControl ItemsSource="{Binding GenreShareSlices}">
+                          <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                              <Canvas Width="180"
+                                      Height="180" />
+                            </ItemsPanelTemplate>
+                          </ItemsControl.ItemsPanel>
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="viewModels:InsightsPieSliceViewModel">
+                              <Path Data="{Binding PathData}"
+                                    Fill="{Binding Fill}" />
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Ellipse Width="76"
+                                 Height="76"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center"
+                                 Fill="#DD08111D"
+                                 Stroke="#2A3A60"
+                                 StrokeThickness="1" />
+                      </Grid>
 
-              <Border Grid.Column="1"
-                      Classes="searchSurface">
-                <StackPanel Spacing="14">
-                  <TextBlock Classes="launcherEyebrow"
-                             FontSize="12"
-                             Text="GENRE AVERAGES" />
-                  <ItemsControl ItemsSource="{Binding RatingByGenre}">
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="viewModels:InsightsBarViewModel">
-                        <StackPanel Margin="0,0,0,10"
-                                    Spacing="6">
-                          <Grid ColumnDefinitions="Auto,*,Auto">
-                            <TextBlock Text="{Binding Label}" />
-                            <TextBlock Grid.Column="2"
-                                       Text="{Binding ValueText}" />
-                          </Grid>
-                          <ProgressBar Height="8"
-                                       Minimum="0"
-                                       Maximum="100"
-                                       Value="{Binding Percent}"
-                                       Foreground="#7CEB8B"
-                                       Background="#1AFFFFFF"
-                                       ShowProgressText="False" />
-                          <TextBlock Classes="launcherHint"
-                                     FontSize="12"
-                                     IsVisible="{Binding HasDetailText}"
-                                     Text="{Binding DetailText}" />
-                        </StackPanel>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                </StackPanel>
-              </Border>
-            </Grid>
-
-            <Border Classes="searchSurface"
-                    IsVisible="{Binding HasInsights}">
-              <StackPanel Spacing="14">
-                <TextBlock Classes="launcherEyebrow"
-                           FontSize="12"
-                           Text="AVERAGE RATING BY DECADE" />
-                <ItemsControl ItemsSource="{Binding RatingByDecade}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="viewModels:InsightsBarViewModel">
-                      <StackPanel Margin="0,0,0,10"
-                                  Spacing="6">
-                        <Grid ColumnDefinitions="Auto,*,Auto">
-                          <TextBlock Text="{Binding Label}" />
-                          <TextBlock Grid.Column="2"
-                                     Text="{Binding ValueText}" />
-                        </Grid>
-                        <ProgressBar Height="8"
-                                     Minimum="0"
-                                     Maximum="100"
-                                     Value="{Binding Percent}"
-                                     Foreground="#53C7FF"
-                                     Background="#1AFFFFFF"
-                                     ShowProgressText="False" />
-                        <TextBlock Classes="launcherHint"
-                                   FontSize="12"
-                                   IsVisible="{Binding HasDetailText}"
-                                   Text="{Binding DetailText}" />
+                      <StackPanel Grid.Column="1"
+                                  Spacing="8">
+                        <ItemsControl ItemsSource="{Binding GenreShareSlices}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="viewModels:InsightsPieSliceViewModel">
+                              <Grid ColumnDefinitions="Auto,*,Auto"
+                                    Margin="0,0,0,6">
+                                <Border Width="10"
+                                        Height="10"
+                                        CornerRadius="999"
+                                        VerticalAlignment="Center"
+                                        Background="{Binding Fill}" />
+                                <TextBlock Grid.Column="1"
+                                           Margin="10,0,12,0"
+                                           Text="{Binding Label}" />
+                                <TextBlock Grid.Column="2"
+                                           Classes="launcherHint"
+                                           Text="{Binding ValueText}" />
+                              </Grid>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                       </StackPanel>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                    </Grid>
+                  </StackPanel>
+                </Border>
+
+                <Border Classes="searchSurface">
+                  <StackPanel Spacing="14">
+                    <TextBlock Classes="launcherEyebrow"
+                               FontSize="12"
+                               Text="RATING DISTRIBUTION" />
+                    <ItemsControl ItemsSource="{Binding RatingDistribution}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="viewModels:InsightsBarViewModel">
+                          <StackPanel Margin="0,0,0,10"
+                                      Spacing="6">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                              <TextBlock Text="{Binding Label}" />
+                              <TextBlock Grid.Column="2"
+                                         Classes="launcherHint"
+                                         Text="{Binding ValueText}" />
+                            </Grid>
+                            <ProgressBar Height="8"
+                                         Minimum="0"
+                                         Maximum="100"
+                                         Value="{Binding Percent}"
+                                         Foreground="#F4C94A"
+                                         Background="#1AFFFFFF"
+                                         ShowProgressText="False" />
+                          </StackPanel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </Border>
+
+                <Border Classes="searchSurface">
+                  <StackPanel Spacing="14">
+                    <TextBlock Classes="launcherEyebrow"
+                               FontSize="12"
+                               Text="AVERAGE RATING BY DECADE" />
+                    <ItemsControl ItemsSource="{Binding RatingByDecade}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="viewModels:InsightsBarViewModel">
+                          <StackPanel Margin="0,0,0,10"
+                                      Spacing="6">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                              <TextBlock Text="{Binding Label}" />
+                              <TextBlock Grid.Column="2"
+                                         Text="{Binding ValueText}" />
+                            </Grid>
+                            <ProgressBar Height="8"
+                                         Minimum="0"
+                                         Maximum="100"
+                                         Value="{Binding Percent}"
+                                         Foreground="#53C7FF"
+                                         Background="#1AFFFFFF"
+                                         ShowProgressText="False" />
+                            <TextBlock Classes="launcherHint"
+                                       FontSize="12"
+                                       IsVisible="{Binding HasDetailText}"
+                                       Text="{Binding DetailText}" />
+                          </StackPanel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </Border>
               </StackPanel>
-            </Border>
+
+              <StackPanel Grid.Column="1"
+                          Spacing="18">
+                <Border Classes="searchSurface">
+                  <StackPanel Spacing="14">
+                    <TextBlock Classes="launcherEyebrow"
+                               FontSize="12"
+                               Text="GENRE AVERAGES" />
+                    <ItemsControl ItemsSource="{Binding RatingByGenre}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="viewModels:InsightsBarViewModel">
+                          <StackPanel Margin="0,0,0,10"
+                                      Spacing="6">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                              <TextBlock Text="{Binding Label}" />
+                              <TextBlock Grid.Column="2"
+                                         Text="{Binding ValueText}" />
+                            </Grid>
+                            <ProgressBar Height="8"
+                                         Minimum="0"
+                                         Maximum="100"
+                                         Value="{Binding Percent}"
+                                         Foreground="#7CEB8B"
+                                         Background="#1AFFFFFF"
+                                         ShowProgressText="False" />
+                            <TextBlock Classes="launcherHint"
+                                       FontSize="12"
+                                       IsVisible="{Binding HasDetailText}"
+                                       Text="{Binding DetailText}" />
+                          </StackPanel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </Border>
+
+                <Border Classes="searchSurface">
+                  <StackPanel Spacing="14">
+                    <TextBlock Classes="launcherEyebrow"
+                               FontSize="12"
+                               Text="MOST WATCHED GENRES" />
+                    <ItemsControl ItemsSource="{Binding MostWatchedGenres}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="viewModels:InsightsBarViewModel">
+                          <StackPanel Margin="0,0,0,10"
+                                      Spacing="6">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                              <TextBlock Text="{Binding Label}" />
+                              <TextBlock Grid.Column="2"
+                                         Text="{Binding ValueText}" />
+                            </Grid>
+                            <ProgressBar Height="8"
+                                         Minimum="0"
+                                         Maximum="100"
+                                         Value="{Binding Percent}"
+                                         Foreground="#FF8F70"
+                                         Background="#1AFFFFFF"
+                                         ShowProgressText="False" />
+                            <TextBlock Classes="launcherHint"
+                                       FontSize="12"
+                                       IsVisible="{Binding HasDetailText}"
+                                       Text="{Binding DetailText}" />
+                          </StackPanel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </Grid>
           </StackPanel>
         </ScrollViewer>
       </Grid>

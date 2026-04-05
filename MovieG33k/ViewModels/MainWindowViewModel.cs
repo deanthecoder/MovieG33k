@@ -10,6 +10,7 @@
 
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -39,6 +40,15 @@ public sealed class MainWindowViewModel : ViewModelBase
 {
     private const int InitialResultLimit = 100;
     private const int ResultLimitIncrement = 50;
+    private static readonly IReadOnlyList<Color> GenreSharePalette =
+    [
+        Color.Parse("#53C7FF"),
+        Color.Parse("#7CEB8B"),
+        Color.Parse("#F4C94A"),
+        Color.Parse("#FF8F70"),
+        Color.Parse("#B28CFF"),
+        Color.Parse("#8FA3B8")
+    ];
     private static readonly RecommendationFilterOption AnyGenreOption = new("Any genre", null);
     private static readonly IReadOnlyList<string> MovieGenres =
     [
@@ -124,6 +134,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         RatingDistribution = new ObservableCollection<InsightsBarViewModel>();
         RatingByDecade = new ObservableCollection<InsightsBarViewModel>();
         RatingByGenre = new ObservableCollection<InsightsBarViewModel>();
+        GenreShareSlices = new ObservableCollection<InsightsPieSliceViewModel>();
+        MostWatchedGenres = new ObservableCollection<InsightsBarViewModel>();
         m_recommendationGenreOptions = BuildGenreOptions(m_selectedKind.Kind);
         m_recommendationAgeRatingOptions = BuildAgeRatingOptions(m_selectedKind.Kind);
         m_selectedRecommendationGenreOption = m_recommendationGenreOptions[0];
@@ -188,6 +200,10 @@ public sealed class MainWindowViewModel : ViewModelBase
     public ObservableCollection<InsightsBarViewModel> RatingByDecade { get; }
 
     public ObservableCollection<InsightsBarViewModel> RatingByGenre { get; }
+
+    public ObservableCollection<InsightsPieSliceViewModel> GenreShareSlices { get; }
+
+    public ObservableCollection<InsightsBarViewModel> MostWatchedGenres { get; }
 
     public IReadOnlyList<RecommendationFilterOption> RecommendationGenreOptions
     {
@@ -317,6 +333,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(AverageRatingValue));
         OnPropertyChanged(nameof(TopDecadeValue));
         OnPropertyChanged(nameof(TopGenreValue));
+        OnPropertyChanged(nameof(HasGenreShare));
     }
 
     public string StatusText
@@ -484,6 +501,8 @@ public sealed class MainWindowViewModel : ViewModelBase
             .Select(bucket => bucket.Genre)
             .FirstOrDefault()
         ?? "N/A";
+
+    public bool HasGenreShare => GenreShareSlices.Count > 0;
 
     public bool HasSelectedRating => SelectedResult?.Snapshot.Rating != null;
 
@@ -697,6 +716,20 @@ public sealed class MainWindowViewModel : ViewModelBase
                 bucket.TitleCount == 1 ? "1 title" : $"{bucket.TitleCount} titles",
                 bucket.AverageRatingOutOfFive)));
 
+        ReplaceInsightBars(
+            MostWatchedGenres,
+            insights.RatingByGenre
+                .OrderByDescending(bucket => bucket.TitleCount)
+                .ThenByDescending(bucket => bucket.AverageRatingOutOfFive)
+                .Take(6)
+                .Select(bucket => new InsightsBarViewModel(
+                    bucket.Genre,
+                    bucket.TitleCount == 1 ? "1 title" : $"{bucket.TitleCount} titles",
+                    $"{CalculateGenreShare(bucket.TitleCount, insights.RatingByGenre):0}% of genre tags",
+                    bucket.TitleCount)));
+
+        ReplacePieSlices(GenreShareSlices, insights.RatingByGenre);
+
         RefreshInsightsPresentationState();
         var mediaType = SelectedKind.Kind == TitleKind.Movie ? "movies" : "TV shows";
         StatusText =
@@ -720,6 +753,98 @@ public sealed class MainWindowViewModel : ViewModelBase
                 Percent = maxValue <= 0 ? 0 : item.Percent / maxValue * 100d
             });
         }
+    }
+
+    private static void ReplacePieSlices(
+        ObservableCollection<InsightsPieSliceViewModel> target,
+        IReadOnlyList<GenreRatingBucket> source)
+    {
+        target.Clear();
+        var sortedBuckets = source?
+            .OrderByDescending(bucket => bucket.TitleCount)
+            .ThenBy(bucket => bucket.Genre)
+            .ToList() ?? [];
+
+        if (sortedBuckets.Count == 0)
+            return;
+
+        var buckets = sortedBuckets
+            .Take(8)
+            .ToList();
+
+        var totalCount = sortedBuckets.Sum(bucket => bucket.TitleCount);
+        var remainingCount = sortedBuckets.Skip(8).Sum(bucket => bucket.TitleCount);
+        var remainingShare = CalculateGenreShare(remainingCount, totalCount);
+
+        if (remainingCount > 0 && remainingShare <= 28d)
+        {
+            buckets.Add(new GenreRatingBucket("Other", remainingCount, 0));
+        }
+
+        if (totalCount <= 0)
+            return;
+
+        const double size = 180d;
+        const double radius = 78d;
+        const double innerRadius = 34d;
+        var center = size / 2d;
+        var angle = -90d;
+
+        for (var index = 0; index < buckets.Count; index++)
+        {
+            var bucket = buckets[index];
+            var sweep = bucket.TitleCount / (double)totalCount * 360d;
+            var fill = new SolidColorBrush(GenreSharePalette[index % GenreSharePalette.Count]);
+            var pathData = CreateDonutSlicePath(center, center, radius, innerRadius, angle, sweep);
+
+            target.Add(new InsightsPieSliceViewModel(
+                bucket.Genre,
+                $"{CalculateGenreShare(bucket.TitleCount, totalCount):0}%",
+                bucket.TitleCount == 1 ? "1 tag" : $"{bucket.TitleCount} tags",
+                pathData,
+                fill));
+
+            angle += sweep;
+        }
+    }
+
+    private static double CalculateGenreShare(int count, IReadOnlyList<GenreRatingBucket> buckets)
+    {
+        var total = buckets?.Sum(bucket => bucket.TitleCount) ?? 0;
+        return CalculateGenreShare(count, total);
+    }
+
+    private static double CalculateGenreShare(int count, int totalCount) =>
+        totalCount <= 0 ? 0d : count / (double)totalCount * 100d;
+
+    private static string CreateDonutSlicePath(double centerX, double centerY, double outerRadius, double innerRadius, double startAngleDegrees, double sweepAngleDegrees)
+    {
+        if (sweepAngleDegrees <= 0d)
+            return string.Empty;
+
+        if (sweepAngleDegrees >= 359.999d)
+            sweepAngleDegrees = 359.999d;
+
+        var startOuter = ToPoint(centerX, centerY, outerRadius, startAngleDegrees);
+        var endOuter = ToPoint(centerX, centerY, outerRadius, startAngleDegrees + sweepAngleDegrees);
+        var startInner = ToPoint(centerX, centerY, innerRadius, startAngleDegrees);
+        var endInner = ToPoint(centerX, centerY, innerRadius, startAngleDegrees + sweepAngleDegrees);
+        var isLargeArc = sweepAngleDegrees > 180d ? 1 : 0;
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"M {startOuter.x:0.###},{startOuter.y:0.###} " +
+            $"A {outerRadius:0.###},{outerRadius:0.###} 0 {isLargeArc} 1 {endOuter.x:0.###},{endOuter.y:0.###} " +
+            $"L {endInner.x:0.###},{endInner.y:0.###} " +
+            $"A {innerRadius:0.###},{innerRadius:0.###} 0 {isLargeArc} 0 {startInner.x:0.###},{startInner.y:0.###} Z");
+    }
+
+    private static (double x, double y) ToPoint(double centerX, double centerY, double radius, double angleDegrees)
+    {
+        var radians = Math.PI * angleDegrees / 180d;
+        return (
+            centerX + radius * Math.Cos(radians),
+            centerY + radius * Math.Sin(radians));
     }
 
     private static LibraryItemSnapshotViewModel CreateRecommendationRow(RecommendationCandidate candidate)

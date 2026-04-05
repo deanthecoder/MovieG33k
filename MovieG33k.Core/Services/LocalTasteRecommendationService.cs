@@ -228,7 +228,6 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
                 >= 18 => 4,
                 >= 15 => 3,
                 >= 12 => 2,
-                >= 0 => 1,
                 _ => 1
             },
             _ => null
