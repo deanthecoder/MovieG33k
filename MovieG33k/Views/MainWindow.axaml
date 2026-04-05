@@ -226,6 +226,18 @@
           <TextBlock Classes="launcherEyebrow"
                      FontSize="12"
                      Text="{Binding ResultsHeading}" />
+          <StackPanel Orientation="Horizontal"
+                      Spacing="8"
+                      IsVisible="{Binding HasActiveDirectorFilter}">
+            <TextBlock Classes="launcherHint"
+                       VerticalAlignment="Center"
+                       Text="{Binding ActiveDirectorFilter, StringFormat=Directed by {0}}" />
+            <Button Classes="neon"
+                    Padding="8,2"
+                    VerticalAlignment="Center"
+                    Command="{Binding ClearDirectorFilterCommand}"
+                    Content="Clear" />
+          </StackPanel>
           <TextBlock Classes="launcherHint"
                      Text="{Binding StatusText}" />
         </StackPanel>
@@ -341,6 +353,29 @@
                     </Grid>
                     <TextBlock Classes="launcherHint"
                                Text="{Binding SelectedSubtitle}" />
+                    <StackPanel Spacing="4"
+                                IsVisible="{Binding HasSelectedDirectors}">
+                      <TextBlock Classes="launcherEyebrow"
+                                 FontSize="12"
+                                 Text="DIRECTED BY" />
+                      <ItemsControl ItemsSource="{Binding SelectedDirectors}">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" />
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <Button Classes="neon"
+                                    Margin="0,0,8,8"
+                                    Padding="8,3"
+                                    Command="{ReflectionBinding DataContext.ApplyDirectorFilterCommand, ElementName=MainWindowRoot}"
+                                    CommandParameter="{Binding}"
+                                    Content="{Binding}" />
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
                     <StackPanel Spacing="4"
                                 IsVisible="{Binding HasSelectedRecommendationSignals}">
                       <TextBlock Classes="launcherEyebrow"

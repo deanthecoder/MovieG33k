@@ -22,4 +22,5 @@ public sealed record DiscoveryQuery(
     string RegionCode,
     int MaxResults = 20,
     string GenreFilter = null,
-    string AgeRatingFilter = null);
+    string AgeRatingFilter = null,
+    string DirectorFilter = null);

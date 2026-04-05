@@ -90,6 +90,111 @@ public sealed class SqliteLibraryRepositoryTests
     }
 
     [Test]
+    public async Task SearchLibraryAsyncCanFilterByDirector()
+    {
+        var databaseFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db"));
+
+        try
+        {
+            var repository = new SqliteLibraryRepository(databaseFile);
+            await repository.UpsertTitlesAsync(
+            [
+                new MovieEntry(new TitleIdentifiers(1, "tt001"), "Alien", "Alien", "One", new DateOnly(1979, 5, 25), null, null, ["Science Fiction"], "en", Directors: ["Ridley Scott"]),
+                new MovieEntry(new TitleIdentifiers(2, "tt002"), "RoboCop", "RoboCop", "Two", new DateOnly(1987, 7, 17), null, null, ["Action"], "en", Directors: ["Paul Verhoeven"])
+            ]);
+
+            var results = await repository.SearchLibraryAsync(string.Empty, TitleKind.Movie, 10, "Ridley Scott");
+
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0].Title.Name, Is.EqualTo("Alien"));
+        }
+        finally
+        {
+            if (databaseFile.Exists)
+                databaseFile.Delete();
+        }
+    }
+
+    [Test]
+    public async Task SearchLibraryAsyncMatchesDirectorNamesInFreeTextQuery()
+    {
+        var databaseFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db"));
+
+        try
+        {
+            var repository = new SqliteLibraryRepository(databaseFile);
+            await repository.UpsertTitlesAsync(
+            [
+                new MovieEntry(new TitleIdentifiers(1, "tt001"), "Alien", "Alien", "One", new DateOnly(1979, 5, 25), null, null, ["Science Fiction"], "en", Directors: ["Ridley Scott"]),
+                new MovieEntry(new TitleIdentifiers(2, "tt002"), "RoboCop", "RoboCop", "Two", new DateOnly(1987, 7, 17), null, null, ["Action"], "en", Directors: ["Paul Verhoeven"])
+            ]);
+
+            var results = await repository.SearchLibraryAsync("Ridley", TitleKind.Movie, 10);
+
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0].Title.Name, Is.EqualTo("Alien"));
+        }
+        finally
+        {
+            if (databaseFile.Exists)
+                databaseFile.Delete();
+        }
+    }
+
+    [Test]
+    public async Task UpsertTitlesAsyncPreservesRicherMovieMetadataWhenLaterSearchRowsAreSparse()
+    {
+        var databaseFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db"));
+
+        try
+        {
+            var repository = new SqliteLibraryRepository(databaseFile);
+            var detailedMovie = new MovieEntry(
+                new TitleIdentifiers(5548, "tt0093870"),
+                "RoboCop",
+                "RoboCop",
+                "Detroit's future lawman.",
+                new DateOnly(1987, 7, 17),
+                "/poster.jpg",
+                "/backdrop.jpg",
+                ["Action", "Science Fiction"],
+                "en",
+                102,
+                7.4m,
+                "18",
+                ["Paul Verhoeven"]);
+            var sparseSearchMovie = new MovieEntry(
+                new TitleIdentifiers(5548, null),
+                "RoboCop",
+                "RoboCop",
+                "Short search summary.",
+                new DateOnly(1987, 7, 17),
+                "/poster.jpg",
+                null,
+                ["Action"],
+                "en");
+
+            await repository.UpsertTitlesAsync([detailedMovie]);
+            await repository.UpsertTitlesAsync([sparseSearchMovie]);
+
+            var results = await repository.SearchLibraryAsync("Paul Verhoeven", TitleKind.Movie, 10);
+            var missingMetadata = await repository.GetTitlesMissingMetadataAsync(TitleKind.Movie, 10);
+
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0].Title.Identifiers.ImdbId, Is.EqualTo("tt0093870"));
+            Assert.That(results[0].Title.Directors, Is.EquivalentTo(new[] { "Paul Verhoeven" }));
+            Assert.That(((MovieEntry)results[0].Title).RuntimeMinutes, Is.EqualTo(102));
+            Assert.That(results[0].Title.AgeRating, Is.EqualTo("18"));
+            Assert.That(missingMetadata, Is.Empty);
+        }
+        finally
+        {
+            if (databaseFile.Exists)
+                databaseFile.Delete();
+        }
+    }
+
+    [Test]
     public async Task GetWatchedAsyncOrdersResultsByRatingDescending()
     {
         var databaseFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db"));
@@ -118,6 +223,33 @@ public sealed class SqliteLibraryRepositoryTests
     }
 
     [Test]
+    public async Task GetWatchedAsyncMatchesDirectorNamesInFreeTextQuery()
+    {
+        var databaseFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db"));
+
+        try
+        {
+            var repository = new SqliteLibraryRepository(databaseFile);
+            var alien = new MovieEntry(new TitleIdentifiers(1, "tt001"), "Alien", "Alien", "One", new DateOnly(1979, 5, 25), null, null, ["Science Fiction"], "en", Directors: ["Ridley Scott"]);
+            var robocop = new MovieEntry(new TitleIdentifiers(2, "tt002"), "RoboCop", "RoboCop", "Two", new DateOnly(1987, 7, 17), null, null, ["Action"], "en", Directors: ["Paul Verhoeven"]);
+
+            await repository.UpsertTitlesAsync([alien, robocop]);
+            await repository.UpsertWatchStateAsync(new WatchState(alien.Identifiers, TitleKind.Movie, WatchStatus.Watched, DateTimeOffset.UtcNow));
+            await repository.UpsertWatchStateAsync(new WatchState(robocop.Identifiers, TitleKind.Movie, WatchStatus.Watched, DateTimeOffset.UtcNow));
+
+            var results = await repository.GetWatchedAsync("Ridley", TitleKind.Movie, 10);
+
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0].Title.Name, Is.EqualTo("Alien"));
+        }
+        finally
+        {
+            if (databaseFile.Exists)
+                databaseFile.Delete();
+        }
+    }
+
+    [Test]
     public async Task GetWatchlistAsyncOrdersResultsByPriorityThenAddedDate()
     {
         var databaseFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db"));
@@ -137,6 +269,33 @@ public sealed class SqliteLibraryRepositoryTests
             var results = await repository.GetWatchlistAsync(string.Empty, TitleKind.Movie, 10);
 
             Assert.That(results.Select(result => result.Title.Name).ToArray(), Is.EqualTo(new[] { "Top Pick", "Recent Pick", "First Pick" }));
+        }
+        finally
+        {
+            if (databaseFile.Exists)
+                databaseFile.Delete();
+        }
+    }
+
+    [Test]
+    public async Task GetWatchlistAsyncMatchesDirectorNamesInFreeTextQuery()
+    {
+        var databaseFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db"));
+
+        try
+        {
+            var repository = new SqliteLibraryRepository(databaseFile);
+            var alien = new MovieEntry(new TitleIdentifiers(1, "tt001"), "Alien", "Alien", "One", new DateOnly(1979, 5, 25), null, null, ["Science Fiction"], "en", Directors: ["Ridley Scott"]);
+            var robocop = new MovieEntry(new TitleIdentifiers(2, "tt002"), "RoboCop", "RoboCop", "Two", new DateOnly(1987, 7, 17), null, null, ["Action"], "en", Directors: ["Paul Verhoeven"]);
+
+            await repository.UpsertTitlesAsync([alien, robocop]);
+            await repository.UpsertWatchlistEntryAsync(new WatchlistEntry(alien.Identifiers, TitleKind.Movie, DateTimeOffset.UtcNow, 1));
+            await repository.UpsertWatchlistEntryAsync(new WatchlistEntry(robocop.Identifiers, TitleKind.Movie, DateTimeOffset.UtcNow, 1));
+
+            var results = await repository.GetWatchlistAsync("Ridley", TitleKind.Movie, 10);
+
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0].Title.Name, Is.EqualTo("Alien"));
         }
         finally
         {
@@ -259,6 +418,147 @@ public sealed class SqliteLibraryRepositoryTests
             await repository.UpsertRatingAsync(new UserRating(breakingBad.Identifiers, TitleKind.TvShow, 10, DateTimeOffset.UtcNow));
 
             var results = await repository.GetRatedTitlesMissingMetadataAsync(TitleKind.TvShow, 10);
+
+            Assert.That(results, Is.Empty);
+        }
+        finally
+        {
+            if (databaseFile.Exists)
+                databaseFile.Delete();
+        }
+    }
+
+    [Test]
+    public async Task GetTitlesMissingMetadataAsyncIncludesUnratedMoviesThatStillNeedDetails()
+    {
+        var databaseFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db"));
+
+        try
+        {
+            var repository = new SqliteLibraryRepository(databaseFile);
+            var robocop = new MovieEntry(
+                new TitleIdentifiers(5548, "tt0093870"),
+                "RoboCop",
+                "RoboCop",
+                "Detroit's future lawman.",
+                new DateOnly(1987, 7, 17),
+                "/poster.jpg",
+                null,
+                ["Action"],
+                "en");
+
+            await repository.UpsertTitlesAsync([robocop]);
+
+            var results = await repository.GetTitlesMissingMetadataAsync(TitleKind.Movie, 10);
+
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0].Title.Name, Is.EqualTo("RoboCop"));
+        }
+        finally
+        {
+            if (databaseFile.Exists)
+                databaseFile.Delete();
+        }
+    }
+
+    [Test]
+    public async Task GetTitlesMissingMetadataAsyncDoesNotFlagMoviesUsingUnavailablePlaceholders()
+    {
+        var databaseFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db"));
+
+        try
+        {
+            var repository = new SqliteLibraryRepository(databaseFile);
+            var robocop = new MovieEntry(
+                new TitleIdentifiers(5548, "tt0093870"),
+                "RoboCop",
+                "RoboCop",
+                "Detroit's future lawman.",
+                new DateOnly(1987, 7, 17),
+                CatalogTitle.UnknownPosterPath,
+                null,
+                ["Action"],
+                "en",
+                CatalogTitle.UnknownRuntimeMinutes,
+                null,
+                CatalogTitle.UnknownAgeRating,
+                [CatalogTitle.UnknownDirector]);
+
+            await repository.UpsertTitlesAsync([robocop]);
+
+            var results = await repository.GetTitlesMissingMetadataAsync(TitleKind.Movie, 10);
+
+            Assert.That(results, Is.Empty);
+        }
+        finally
+        {
+            if (databaseFile.Exists)
+                databaseFile.Delete();
+        }
+    }
+
+    [Test]
+    public async Task GetTitlesMissingMetadataAsyncDoesNotFlagUpcomingMoviesMissingAgeRatingAndRuntime()
+    {
+        var databaseFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db"));
+
+        try
+        {
+            var repository = new SqliteLibraryRepository(databaseFile);
+            var upcomingMovie = new MovieEntry(
+                new TitleIdentifiers(1170608, "tt31378509"),
+                "Dune: Part Three",
+                "Dune: Part Three",
+                "One",
+                DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30),
+                "/poster.jpg",
+                null,
+                ["Science Fiction"],
+                "en",
+                null,
+                null,
+                null,
+                ["Denis Villeneuve"]);
+
+            await repository.UpsertTitlesAsync([upcomingMovie]);
+
+            var results = await repository.GetTitlesMissingMetadataAsync(TitleKind.Movie, 10);
+
+            Assert.That(results, Is.Empty);
+        }
+        finally
+        {
+            if (databaseFile.Exists)
+                databaseFile.Delete();
+        }
+    }
+
+    [Test]
+    public async Task GetTitlesMissingMetadataAsyncDoesNotFlagReleasedMoviesMissingOnlyRuntime()
+    {
+        var databaseFile = new FileInfo(Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.db"));
+
+        try
+        {
+            var repository = new SqliteLibraryRepository(databaseFile);
+            var concertFilm = new MovieEntry(
+                new TitleIdentifiers(959935, null),
+                "Hacken Lee Concert Hall",
+                "Hacken Lee Concert Hall",
+                "One",
+                new DateOnly(2008, 4, 3),
+                "/poster.jpg",
+                null,
+                ["Music"],
+                "zh",
+                null,
+                null,
+                CatalogTitle.UnknownAgeRating,
+                [CatalogTitle.UnknownDirector]);
+
+            await repository.UpsertTitlesAsync([concertFilm]);
+
+            var results = await repository.GetTitlesMissingMetadataAsync(TitleKind.Movie, 10);
 
             Assert.That(results, Is.Empty);
         }

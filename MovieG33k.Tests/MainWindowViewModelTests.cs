@@ -210,6 +210,54 @@ public sealed class MainWindowViewModelTests
     }
 
     [Test]
+    public async Task ApplyDirectorFilterCommandSwitchesToBrowseAndFiltersResults()
+    {
+        var alien = new MovieEntry(
+            new TitleIdentifiers(348, "tt0078748"),
+            "Alien",
+            "Alien",
+            "One",
+            new DateOnly(1979, 5, 25),
+            null,
+            null,
+            ["Science Fiction"],
+            "en",
+            Directors: ["Ridley Scott"]);
+        var robocop = new MovieEntry(
+            new TitleIdentifiers(5548, "tt0093870"),
+            "RoboCop",
+            "RoboCop",
+            "Two",
+            new DateOnly(1987, 7, 17),
+            null,
+            null,
+            ["Action"],
+            "en",
+            Directors: ["Paul Verhoeven"]);
+        var repository = new FakeLibraryRepository([
+            new LibraryItemSnapshot(alien, SourceLabel: "Local"),
+            new LibraryItemSnapshot(robocop, SourceLabel: "Local")
+        ]);
+        var tmdbClient = new FakeTmdbMetadataClient([]);
+        var viewModel = new MainWindowViewModel(
+            new DiscoveryWorkspaceService(repository, tmdbClient),
+            new FakeRecommendationService([]),
+            new ImdbCsvImportService(tmdbClient),
+            new FakeDialogService());
+
+        await viewModel.RefreshAsync();
+
+        viewModel.ApplyDirectorFilterCommand.Execute("Ridley Scott");
+        await viewModel.RefreshAsync();
+
+        Assert.That(viewModel.IsDiscoveryMode, Is.True);
+        Assert.That(viewModel.HasActiveDirectorFilter, Is.True);
+        Assert.That(viewModel.ActiveDirectorFilter, Is.EqualTo("Ridley Scott"));
+        Assert.That(viewModel.Results, Has.Count.EqualTo(1));
+        Assert.That(viewModel.Results[0].Title, Is.EqualTo("Alien"));
+    }
+
+    [Test]
     public async Task InsightsModeBuildsStatsFromRatedTitles()
     {
         var titles =
@@ -514,8 +562,13 @@ public sealed class MainWindowViewModelTests
 
         public Task UpsertProviderAvailabilityAsync(TitleIdentifiers identifiers, TitleKind kind, IReadOnlyList<ProviderAvailability> providerAvailabilities, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-        public Task<IReadOnlyList<LibraryItemSnapshot>> SearchLibraryAsync(string query, TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>(m_searchResults.Where(snapshot => snapshot.Title.Kind == kind).Take(maxResults).ToArray());
+        public Task<IReadOnlyList<LibraryItemSnapshot>> SearchLibraryAsync(string query, TitleKind kind, int maxResults, string directorFilter = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>(
+                m_searchResults
+                    .Where(snapshot => snapshot.Title.Kind == kind)
+                    .Where(snapshot => string.IsNullOrWhiteSpace(directorFilter) || (snapshot.Title.Directors?.Any(director => director.Contains(directorFilter, StringComparison.OrdinalIgnoreCase)) ?? false))
+                    .Take(maxResults)
+                    .ToArray());
 
         public Task<IReadOnlyDictionary<string, LibraryItemSnapshot>> GetByCatalogKeysAsync(IReadOnlyList<string> catalogKeys, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyDictionary<string, LibraryItemSnapshot>>(
@@ -539,6 +592,13 @@ public sealed class MainWindowViewModelTests
                         snapshot.Rating.ScoreOutOfTen,
                         snapshot.Title.ReleaseYear,
                         snapshot.Title.Genres ?? Array.Empty<string>()))
+                    .ToArray());
+
+        public Task<IReadOnlyList<LibraryItemSnapshot>> GetTitlesMissingMetadataAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>(
+                m_searchResults
+                    .Where(snapshot => snapshot.Title.Kind == kind)
+                    .Take(maxResults)
                     .ToArray());
 
         public Task<IReadOnlyList<LibraryItemSnapshot>> GetRatedTitlesMissingMetadataAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>

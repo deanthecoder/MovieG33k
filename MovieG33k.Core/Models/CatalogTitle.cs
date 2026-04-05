@@ -35,6 +35,9 @@ public abstract record CatalogTitle(
     IReadOnlyList<string> Directors = null)
 {
     public const string UnknownAgeRating = "[Unknown]";
+    public const string UnknownDirector = "[Unknown]";
+    public const string UnknownPosterPath = "[Unavailable]";
+    public const int UnknownRuntimeMinutes = -1;
 
     /// <summary>
     /// Returns the release year when a release date is known.
@@ -47,4 +50,22 @@ public abstract record CatalogTitle(
     public bool HasKnownAgeRating =>
         !string.IsNullOrWhiteSpace(AgeRating) &&
         !string.Equals(AgeRating, UnknownAgeRating, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Returns true when the poster field has been resolved, even if no poster is available.
+    /// </summary>
+    public bool HasResolvedPosterPath =>
+        !string.IsNullOrWhiteSpace(PosterPath);
+
+    /// <summary>
+    /// Returns true when director metadata has been resolved, even if no named director is available.
+    /// </summary>
+    public bool HasResolvedDirectors =>
+        Directors?.Count > 0;
+
+    public static bool IsUnknownDirector(string director) =>
+        string.Equals(director?.Trim(), UnknownDirector, StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsUnavailablePosterPath(string posterPath) =>
+        string.Equals(posterPath?.Trim(), UnknownPosterPath, StringComparison.OrdinalIgnoreCase);
 }

@@ -170,17 +170,17 @@ public class App : Application
             if (pendingCount <= 0)
                 return;
 
-            Logger.Instance.Info($"Startup metadata check found {pendingCount} rated titles queued for refresh.");
+            Logger.Instance.Info($"Startup metadata check found {pendingCount} cached titles queued for refresh.");
             var shouldRefresh = await ConfirmAsync(
                 "Metadata updates available",
                 pendingCount == 1
-                    ? "MovieG33k found 1 rated title that needs richer metadata. Updating now may take a little while. Do you want to continue?"
-                    : $"MovieG33k found {pendingCount} rated titles that need richer metadata. Updating now may take a little while. Do you want to continue?",
+                    ? "MovieG33k found 1 cached title that needs richer metadata. Updating now may take a little while. Do you want to continue?"
+                    : $"MovieG33k found {pendingCount} cached titles that need richer metadata. Updating now may take a little while. Do you want to continue?",
                 "Later",
                 "Update now");
             if (!shouldRefresh)
             {
-                Logger.Instance.Info("User skipped startup rated-title metadata refresh.");
+                Logger.Instance.Info("User skipped startup metadata refresh.");
                 return;
             }
 
@@ -196,18 +196,34 @@ public class App : Application
                 progressToken.Progress = (int)Math.Round(update.ProcessedCount * 100d / update.TotalCount, MidpointRounding.AwayFromZero);
             });
 
-            using (DialogService.Instance.ShowBusy("Updating rated title metadata...", progressToken))
+            var refreshedCount = 0;
+            var remainingCount = 0;
+            using (DialogService.Instance.ShowBusy("Updating title metadata...", progressToken))
             {
                 await Dispatcher.UIThread.InvokeAsync(static () => { }, DispatcherPriority.Background);
-                Logger.Instance.Info("User accepted startup rated-title metadata refresh.");
-                var refreshedCount = await discoveryWorkspaceService.RefreshMissingMetadataForRatedTitlesAsync(MetadataRefreshStartupLimit, progress);
+                Logger.Instance.Info("User accepted startup metadata refresh.");
+                refreshedCount = await discoveryWorkspaceService.RefreshMissingMetadataForRatedTitlesAsync(MetadataRefreshStartupLimit, progress);
                 progressToken.Progress = 100;
-                Logger.Instance.Info($"Startup rated-title metadata refresh finished after updating {refreshedCount} titles.");
+                remainingCount = await discoveryWorkspaceService.GetPendingMetadataRefreshCountAsync(MetadataRefreshStartupLimit);
+                Logger.Instance.Info($"Startup metadata refresh finished after updating {refreshedCount} titles. {remainingCount} titles still need metadata.");
+            }
+
+            if (remainingCount > 0)
+            {
+                DialogService.Instance.ShowMessage(
+                    "Metadata refresh finished",
+                    refreshedCount == 1
+                        ? remainingCount == 1
+                            ? "Updated 1 title, but 1 title still reports missing metadata."
+                            : $"Updated 1 title, but {remainingCount} titles still report missing metadata."
+                        : remainingCount == 1
+                            ? $"Updated {refreshedCount} titles, but 1 title still reports missing metadata."
+                            : $"Updated {refreshedCount} titles, but {remainingCount} titles still report missing metadata.");
             }
         }
         catch (Exception ex)
         {
-            Logger.Instance.Exception("Startup rated-title metadata refresh prompt failed.", ex);
+            Logger.Instance.Exception("Startup metadata refresh prompt failed.", ex);
         }
     }
 

@@ -59,6 +59,24 @@ public sealed class LocalTasteRecommendationServiceTests
     }
 
     [Test]
+    public async Task GetRecommendationsAsyncLetsDirectorQueryFilterTheResults()
+    {
+        var alien = new MovieEntry(new TitleIdentifiers(348, "tt0078748"), "Alien", "Alien", "One", new DateOnly(1979, 5, 25), null, null, ["Science Fiction", "Horror"], "en", 117, 8.5m, Directors: ["Ridley Scott"]);
+        var robocop = new MovieEntry(new TitleIdentifiers(5548, "tt0093870"), "RoboCop", "RoboCop", "Two", new DateOnly(1987, 7, 17), null, null, ["Action", "Science Fiction"], "en", 102, 7.4m, Directors: ["Paul Verhoeven"]);
+        var repository = new FakeLibraryRepository(
+            ratedInsights:
+            [
+                new RatedTitleInsight("movie:1", "Blade Runner", 10, 1982, ["Science Fiction"], ["Ridley Scott"])
+            ]);
+        var tmdbClient = new FakeTmdbMetadataClient([alien, robocop]);
+        var service = new LocalTasteRecommendationService(repository, tmdbClient);
+
+        var results = await service.GetRecommendationsAsync(new DiscoveryQuery("Ridley", TitleKind.Movie, "GB", 20));
+
+        Assert.That(results.Select(result => result.Title.Name).ToArray(), Is.EqualTo(new[] { "Alien" }));
+    }
+
+    [Test]
     public async Task GetRecommendationsAsyncLetsGenreFilterRestrictTheResults()
     {
         var alien = new MovieEntry(new TitleIdentifiers(348, "tt0078748"), "Alien", "Alien", "One", new DateOnly(1979, 5, 25), null, null, ["Science Fiction", "Horror"], "en", 117, 8.5m);
@@ -266,7 +284,7 @@ public sealed class LocalTasteRecommendationServiceTests
         public Task UpsertWatchlistEntryAsync(WatchlistEntry watchlistEntry, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task DeleteWatchlistEntryAsync(TitleIdentifiers identifiers, TitleKind kind, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task UpsertProviderAvailabilityAsync(TitleIdentifiers identifiers, TitleKind kind, IReadOnlyList<ProviderAvailability> providerAvailabilities, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<IReadOnlyList<LibraryItemSnapshot>> SearchLibraryAsync(string query, TitleKind kind, int maxResults, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>([]);
+        public Task<IReadOnlyList<LibraryItemSnapshot>> SearchLibraryAsync(string query, TitleKind kind, int maxResults, string directorFilter = null, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>([]);
         public Task<IReadOnlyDictionary<string, LibraryItemSnapshot>> GetByCatalogKeysAsync(IReadOnlyList<string> catalogKeys, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyDictionary<string, LibraryItemSnapshot>>(
                 m_snapshotsByKey
@@ -275,6 +293,8 @@ public sealed class LocalTasteRecommendationServiceTests
         public Task<IReadOnlyList<LibraryItemSnapshot>> GetWatchedAsync(string query, TitleKind kind, int maxResults, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>([]);
         public Task<IReadOnlyList<LibraryItemSnapshot>> GetWatchlistAsync(string query, TitleKind kind, int maxResults, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>([]);
         public Task<IReadOnlyList<RatedTitleInsight>> GetRatedTitleInsightsAsync(TitleKind kind, CancellationToken cancellationToken = default) => Task.FromResult(m_ratedInsights);
+        public Task<IReadOnlyList<LibraryItemSnapshot>> GetTitlesMissingMetadataAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>([]);
         public Task<IReadOnlyList<LibraryItemSnapshot>> GetRatedTitlesMissingMetadataAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>([]);
         public Task ResetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

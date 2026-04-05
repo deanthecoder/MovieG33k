@@ -69,6 +69,7 @@ public interface ILibraryRepository
         string query,
         TitleKind kind,
         int maxResults,
+        string directorFilter = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -101,6 +102,14 @@ public interface ILibraryRepository
     /// </summary>
     Task<IReadOnlyList<RatedTitleInsight>> GetRatedTitleInsightsAsync(
         TitleKind kind,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns cached titles that are still missing important metadata.
+    /// </summary>
+    Task<IReadOnlyList<LibraryItemSnapshot>> GetTitlesMissingMetadataAsync(
+        TitleKind kind,
+        int maxResults,
         CancellationToken cancellationToken = default);
 
     /// <summary>

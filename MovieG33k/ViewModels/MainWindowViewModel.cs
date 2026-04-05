@@ -104,6 +104,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     private CancellationTokenSource m_posterCancellationTokenSource;
     private CancellationTokenSource m_selectedDetailsCancellationTokenSource;
     private readonly HashSet<string> m_enrichedDetailKeys = new(StringComparer.OrdinalIgnoreCase);
+    private string m_activeDirectorFilter;
+    private bool m_suppressAutoRefresh;
 
     /// <summary>
     /// Creates a new main window view model.
@@ -146,6 +148,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         ShowWatchlistCommand = new RelayCommand(_ => CurrentMode = LibraryViewMode.Watchlist);
         ShowWatchedCommand = new RelayCommand(_ => CurrentMode = LibraryViewMode.Watched);
         ShowInsightsCommand = new RelayCommand(_ => CurrentMode = LibraryViewMode.Insights);
+        ApplyDirectorFilterCommand = new RelayCommand(parameter => ApplyDirectorFilter(parameter as string));
+        ClearDirectorFilterCommand = new RelayCommand(_ => ClearDirectorFilter(), _ => HasActiveDirectorFilter);
         ImportImdbRatingsCommand = new AsyncRelayCommand(
             _ => ImportImdbRatingsAsync(),
             onException: exception => m_dialogService.ShowMessage("Import failed", exception.Message));
@@ -182,6 +186,10 @@ public sealed class MainWindowViewModel : ViewModelBase
     public ICommand ShowWatchedCommand { get; }
 
     public ICommand ShowInsightsCommand { get; }
+
+    public ICommand ApplyDirectorFilterCommand { get; }
+
+    public ICommand ClearDirectorFilterCommand { get; }
 
     public ICommand ImportImdbRatingsCommand { get; }
 
@@ -249,7 +257,8 @@ public sealed class MainWindowViewModel : ViewModelBase
             if (!SetField(ref m_searchText, value))
                 return;
 
-            ResetResultLimitAndRefresh();
+            if (!m_suppressAutoRefresh)
+                ResetResultLimitAndRefresh();
         }
     }
 
@@ -262,7 +271,8 @@ public sealed class MainWindowViewModel : ViewModelBase
                 return;
 
             UpdateRecommendationFilterOptions();
-            ResetResultLimitAndRefresh();
+            if (!m_suppressAutoRefresh)
+                ResetResultLimitAndRefresh();
         }
     }
 
@@ -311,6 +321,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(SelectedPublicRatingLabel));
         OnPropertyChanged(nameof(HasSelectedRuntime));
         OnPropertyChanged(nameof(SelectedRuntimeLabel));
+        OnPropertyChanged(nameof(SelectedDirectors));
+        OnPropertyChanged(nameof(HasSelectedDirectors));
         OnPropertyChanged(nameof(IsSelectedOnWatchlist));
         OnPropertyChanged(nameof(CanToggleWatchlist));
         OnPropertyChanged(nameof(WatchlistButtonLabel));
@@ -374,6 +386,23 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public bool HasRecommendationAgeRatingFilter => IsRecommendedMode && SelectedKind?.Kind == TitleKind.Movie;
 
+    public bool HasActiveDirectorFilter => !string.IsNullOrWhiteSpace(ActiveDirectorFilter);
+
+    public string ActiveDirectorFilter
+    {
+        get => m_activeDirectorFilter;
+        private set
+        {
+            if (!SetField(ref m_activeDirectorFilter, value))
+                return;
+
+            OnPropertyChanged(nameof(HasActiveDirectorFilter));
+            OnPropertyChanged(nameof(SearchWatermark));
+            OnPropertyChanged(nameof(ResultsHeading));
+            (ClearDirectorFilterCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+    }
+
     private LibraryViewMode CurrentMode
     {
         get => m_currentMode;
@@ -396,7 +425,8 @@ public sealed class MainWindowViewModel : ViewModelBase
             if (previousMode != value)
                 SelectedResult = null;
 
-            ResetResultLimitAndRefresh();
+            if (!m_suppressAutoRefresh)
+                ResetResultLimitAndRefresh();
         }
     }
 
@@ -407,6 +437,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             LibraryViewMode.Recommended => "Filter recommendations by title or genre...",
             LibraryViewMode.Watched => "Filter your watched titles by title...",
             LibraryViewMode.Watchlist => "Filter the films and shows you've pinned for later...",
+            _ when HasActiveDirectorFilter => $"Filter titles directed by {ActiveDirectorFilter}...",
             _ => "Search for something to watch or rate..."
         };
 
@@ -417,6 +448,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             LibraryViewMode.Recommended => "RECOMMENDED",
             LibraryViewMode.Watched => "WATCHED AND RATED",
             LibraryViewMode.Watchlist => "PINNED TO WATCH",
+            _ when HasActiveDirectorFilter => $"DIRECTED BY {ActiveDirectorFilter?.ToUpperInvariant()}",
             _ => "BROWSE MOVIES"
         };
 
@@ -525,6 +557,15 @@ public sealed class MainWindowViewModel : ViewModelBase
             ? $"Runtime: {FormatRuntime(runtimeMinutes)}"
             : string.Empty;
 
+    public IReadOnlyList<string> SelectedDirectors =>
+        SelectedResult?.Snapshot.Title.Directors?
+            .Where(director => !string.IsNullOrWhiteSpace(director) && !CatalogTitle.IsUnknownDirector(director))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray()
+        ?? Array.Empty<string>();
+
+    public bool HasSelectedDirectors => SelectedDirectors.Count > 0;
+
     public bool IsSelectedOnWatchlist => SelectedResult?.Snapshot.WatchlistEntry != null;
 
     public bool CanToggleWatchlist => SelectedResult?.Snapshot.Rating == null;
@@ -591,7 +632,12 @@ public sealed class MainWindowViewModel : ViewModelBase
                 return;
             }
 
-            var query = new DiscoveryQuery(SearchText, SelectedKind.Kind, m_regionCode, m_resultLimit);
+            var query = new DiscoveryQuery(
+                SearchText,
+                SelectedKind.Kind,
+                m_regionCode,
+                m_resultLimit,
+                DirectorFilter: CurrentMode == LibraryViewMode.Discover ? ActiveDirectorFilter : null);
             var result =
                 CurrentMode switch
                 {
@@ -868,6 +914,36 @@ public sealed class MainWindowViewModel : ViewModelBase
         _ = RefreshResultsAsync();
     }
 
+    private void ApplyDirectorFilter(string director)
+    {
+        if (string.IsNullOrWhiteSpace(director))
+            return;
+
+        m_suppressAutoRefresh = true;
+        try
+        {
+            CurrentMode = LibraryViewMode.Discover;
+            SelectedKind = KindOptions.First(option => option.Kind == TitleKind.Movie);
+            SearchText = string.Empty;
+            ActiveDirectorFilter = director.Trim();
+        }
+        finally
+        {
+            m_suppressAutoRefresh = false;
+        }
+
+        ResetResultLimitAndRefresh(selectFirstResult: true);
+    }
+
+    private void ClearDirectorFilter()
+    {
+        if (!HasActiveDirectorFilter)
+            return;
+
+        ActiveDirectorFilter = null;
+        ResetResultLimitAndRefresh(selectFirstResult: true);
+    }
+
     private void UpdateRecommendationFilterOptions()
     {
         RecommendationGenreOptions = BuildGenreOptions(SelectedKind.Kind);
@@ -1019,10 +1095,9 @@ public sealed class MainWindowViewModel : ViewModelBase
     }
 
     private static bool ShouldRefreshSelectedTitleDetails(CatalogTitle title) =>
-        string.IsNullOrWhiteSpace(title.PosterPath) ||
-        (title.Kind == TitleKind.Movie && !title.HasKnownAgeRating) ||
-        (title.Kind == TitleKind.Movie && (title.Directors == null || title.Directors.Count == 0)) ||
-        title is MovieEntry { RuntimeMinutes: null or <= 0 };
+        !title.HasResolvedPosterPath ||
+        (title.Kind == TitleKind.Movie && RequiresReleasedMovieMetadata(title) && string.IsNullOrWhiteSpace(title.AgeRating)) ||
+        (title.Kind == TitleKind.Movie && !title.HasResolvedDirectors);
 
     private static async Task<Stream> OpenPosterStreamAsync(string posterUrl, CancellationToken cancellationToken)
     {
@@ -1070,6 +1145,10 @@ public sealed class MainWindowViewModel : ViewModelBase
             ? "In your library"
             : "Search hit";
     }
+
+    private static bool RequiresReleasedMovieMetadata(CatalogTitle title) =>
+        title.Kind == TitleKind.Movie &&
+        (!title.ReleaseDate.HasValue || title.ReleaseDate.Value <= DateOnly.FromDateTime(DateTime.UtcNow));
 
     private Uri GetSelectedExternalUri()
     {

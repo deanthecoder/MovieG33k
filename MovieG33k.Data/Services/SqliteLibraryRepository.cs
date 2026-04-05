@@ -180,12 +180,29 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         ArgumentNullException.ThrowIfNull(titles);
         await InitializeAsync(cancellationToken);
 
+        var existingSnapshotsByKey =
+            titles.Count == 0
+                ? new Dictionary<string, LibraryItemSnapshot>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, LibraryItemSnapshot>(
+                    await GetByCatalogKeysAsync(
+                        titles
+                            .Select(title => CatalogTitleKey.Create(title.Kind, title.Identifiers))
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .ToArray(),
+                        cancellationToken),
+                    StringComparer.OrdinalIgnoreCase);
+
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
 
         foreach (var title in titles)
         {
+            var catalogKey = CatalogTitleKey.Create(title.Kind, title.Identifiers);
+            var mergedTitle =
+                existingSnapshotsByKey.TryGetValue(catalogKey, out var existingSnapshot)
+                    ? MergeTitle(existingSnapshot.Title, title)
+                    : title;
             var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText =
@@ -218,7 +235,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                     updated_utc = excluded.updated_utc;
                 """;
 
-            AddTitleParameters(command, title);
+            AddTitleParameters(command, mergedTitle);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -378,6 +395,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         string query,
         TitleKind kind,
         int maxResults,
+        string directorFilter = null,
         CancellationToken cancellationToken = default)
     {
         await InitializeAsync(cancellationToken);
@@ -387,6 +405,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
 
         var command = connection.CreateCommand();
         var normalizedQuery = query?.Trim();
+        var normalizedDirectorFilter = directorFilter?.Trim();
         command.CommandText =
             """
             SELECT
@@ -423,7 +442,8 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
             LEFT JOIN watch_states ws ON ws.catalog_key = t.catalog_key
             LEFT JOIN watchlist_entries wl ON wl.catalog_key = t.catalog_key
             WHERE t.kind = $kind
-              AND ($query = '' OR t.name LIKE $pattern OR COALESCE(t.original_name, '') LIKE $pattern)
+              AND ($directorFilter = '' OR COALESCE(t.directors, '') LIKE $directorPattern)
+              AND ($query = '' OR t.name LIKE $pattern OR COALESCE(t.original_name, '') LIKE $pattern OR COALESCE(t.directors, '') LIKE $pattern)
             ORDER BY
                 CASE
                     WHEN $query = '' THEN 0
@@ -433,13 +453,16 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                     WHEN LOWER(COALESCE(t.original_name, '')) LIKE LOWER($prefixPattern) THEN 3
                     WHEN LOWER(t.name) LIKE LOWER($pattern) THEN 4
                     WHEN LOWER(COALESCE(t.original_name, '')) LIKE LOWER($pattern) THEN 5
-                    ELSE 6
+                    WHEN LOWER(COALESCE(t.directors, '')) LIKE LOWER($pattern) THEN 6
+                    ELSE 7
                 END ASC,
                 CASE WHEN $query = '' THEN t.updated_utc END DESC,
                 CASE WHEN $query <> '' THEN t.name END ASC
             LIMIT $maxResults;
             """;
         command.Parameters.AddWithValue("$kind", kind.ToString());
+        command.Parameters.AddWithValue("$directorFilter", normalizedDirectorFilter ?? string.Empty);
+        command.Parameters.AddWithValue("$directorPattern", $"%{normalizedDirectorFilter}%");
         command.Parameters.AddWithValue("$query", normalizedQuery ?? string.Empty);
         command.Parameters.AddWithValue("$pattern", $"%{normalizedQuery}%");
         command.Parameters.AddWithValue("$prefixPattern", $"{normalizedQuery}%");
@@ -576,7 +599,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
             LEFT JOIN watchlist_entries wl ON wl.catalog_key = t.catalog_key
             WHERE t.kind = $kind
               AND ws.status = $watchedStatus
-              AND ($query = '' OR t.name LIKE $pattern OR COALESCE(t.original_name, '') LIKE $pattern)
+              AND ($query = '' OR t.name LIKE $pattern OR COALESCE(t.original_name, '') LIKE $pattern OR COALESCE(t.directors, '') LIKE $pattern)
             ORDER BY
                 CASE
                     WHEN $query = '' THEN 0
@@ -586,7 +609,8 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                     WHEN LOWER(COALESCE(t.original_name, '')) LIKE LOWER($prefixPattern) THEN 3
                     WHEN LOWER(t.name) LIKE LOWER($pattern) THEN 4
                     WHEN LOWER(COALESCE(t.original_name, '')) LIKE LOWER($pattern) THEN 5
-                    ELSE 6
+                    WHEN LOWER(COALESCE(t.directors, '')) LIKE LOWER($pattern) THEN 6
+                    ELSE 7
                 END ASC,
                 COALESCE(r.score_out_of_ten, -1) DESC,
                 COALESCE(ws.last_watched_utc, r.updated_utc, t.updated_utc) DESC,
@@ -658,7 +682,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
             LEFT JOIN watch_states ws ON ws.catalog_key = t.catalog_key
             INNER JOIN watchlist_entries wl ON wl.catalog_key = t.catalog_key
             WHERE t.kind = $kind
-              AND ($query = '' OR t.name LIKE $pattern OR COALESCE(t.original_name, '') LIKE $pattern)
+              AND ($query = '' OR t.name LIKE $pattern OR COALESCE(t.original_name, '') LIKE $pattern OR COALESCE(t.directors, '') LIKE $pattern)
             ORDER BY
                 CASE
                     WHEN $query = '' THEN 0
@@ -668,7 +692,8 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
                     WHEN LOWER(COALESCE(t.original_name, '')) LIKE LOWER($prefixPattern) THEN 3
                     WHEN LOWER(t.name) LIKE LOWER($pattern) THEN 4
                     WHEN LOWER(COALESCE(t.original_name, '')) LIKE LOWER($pattern) THEN 5
-                    ELSE 6
+                    WHEN LOWER(COALESCE(t.directors, '')) LIKE LOWER($pattern) THEN 6
+                    ELSE 7
                 END ASC,
                 COALESCE(wl.priority, 0) DESC,
                 wl.added_utc DESC,
@@ -744,6 +769,75 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<LibraryItemSnapshot>> GetTitlesMissingMetadataAsync(
+        TitleKind kind,
+        int maxResults,
+        CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync(cancellationToken);
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        command.CommandText =
+            """
+            SELECT
+                t.catalog_key,
+                t.kind,
+                t.tmdb_id,
+                t.imdb_id,
+                t.name,
+                t.original_name,
+                t.overview,
+                t.release_date,
+                t.poster_path,
+                t.backdrop_path,
+                t.genres,
+                t.directors,
+                t.original_language,
+                t.public_rating,
+                t.age_rating,
+                t.runtime_minutes,
+                t.season_count,
+                t.episode_count,
+                r.score_out_of_ten,
+                r.notes AS rating_notes,
+                r.updated_utc,
+                ws.status,
+                ws.last_watched_utc,
+                ws.last_season_number,
+                ws.last_episode_number,
+                wl.added_utc,
+                wl.priority,
+                wl.notes AS watchlist_notes
+            FROM titles t
+            LEFT JOIN user_ratings r ON r.catalog_key = t.catalog_key
+            LEFT JOIN watch_states ws ON ws.catalog_key = t.catalog_key
+            LEFT JOIN watchlist_entries wl ON wl.catalog_key = t.catalog_key
+            WHERE t.kind = $kind
+              AND (
+                    COALESCE(t.poster_path, '') = ''
+                    OR (t.kind = 'Movie' AND COALESCE(t.age_rating, '') = '' AND (COALESCE(t.release_date, '') = '' OR t.release_date <= $today))
+                    OR (t.kind = 'Movie' AND COALESCE(t.directors, '') = '')
+                  )
+            ORDER BY t.updated_utc ASC, t.name ASC
+            LIMIT $maxResults;
+            """;
+        command.Parameters.AddWithValue("$kind", kind.ToString());
+        command.Parameters.AddWithValue("$today", today);
+        command.Parameters.AddWithValue("$maxResults", maxResults);
+
+        var results = new List<LibraryItemSnapshot>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            results.Add(await ReadSnapshotAsync(connection, reader, cancellationToken));
+
+        return results;
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<LibraryItemSnapshot>> GetRatedTitlesMissingMetadataAsync(
         TitleKind kind,
         int maxResults,
@@ -755,6 +849,7 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         await connection.OpenAsync(cancellationToken);
 
         var command = connection.CreateCommand();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         command.CommandText =
             """
             SELECT
@@ -793,14 +888,14 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
             WHERE t.kind = $kind
               AND (
                     COALESCE(t.poster_path, '') = ''
-                    OR (t.kind = 'Movie' AND COALESCE(t.age_rating, '') = '')
+                    OR (t.kind = 'Movie' AND COALESCE(t.age_rating, '') = '' AND (COALESCE(t.release_date, '') = '' OR t.release_date <= $today))
                     OR (t.kind = 'Movie' AND COALESCE(t.directors, '') = '')
-                    OR (t.kind = 'Movie' AND COALESCE(t.runtime_minutes, 0) <= 0)
                   )
             ORDER BY t.updated_utc ASC, t.name ASC
             LIMIT $maxResults;
             """;
         command.Parameters.AddWithValue("$kind", kind.ToString());
+        command.Parameters.AddWithValue("$today", today);
         command.Parameters.AddWithValue("$maxResults", maxResults);
 
         var results = new List<LibraryItemSnapshot>();
@@ -835,6 +930,101 @@ public sealed class SqliteLibraryRepository : ILibraryRepository
         if (file.Exists)
             file.Delete();
     }
+
+    private static CatalogTitle MergeTitle(CatalogTitle existingTitle, CatalogTitle incomingTitle)
+    {
+        ArgumentNullException.ThrowIfNull(existingTitle);
+        ArgumentNullException.ThrowIfNull(incomingTitle);
+
+        var mergedIdentifiers = new TitleIdentifiers(
+            incomingTitle.Identifiers.TmdbId ?? existingTitle.Identifiers.TmdbId,
+            PreferText(incomingTitle.Identifiers.ImdbId, existingTitle.Identifiers.ImdbId));
+        var mergedName = PreferText(incomingTitle.Name, existingTitle.Name);
+        var mergedOriginalName = PreferText(incomingTitle.OriginalName, existingTitle.OriginalName);
+        var mergedOverview = PreferText(incomingTitle.Overview, existingTitle.Overview);
+        var mergedPosterPath = PreferText(incomingTitle.PosterPath, existingTitle.PosterPath);
+        var mergedBackdropPath = PreferText(incomingTitle.BackdropPath, existingTitle.BackdropPath);
+        var mergedGenres = PreferList(incomingTitle.Genres, existingTitle.Genres);
+        var mergedLanguage = PreferText(incomingTitle.OriginalLanguage, existingTitle.OriginalLanguage);
+        var mergedAgeRating = PreferAgeRating(incomingTitle.AgeRating, existingTitle.AgeRating);
+        var mergedDirectors = PreferList(incomingTitle.Directors, existingTitle.Directors);
+
+        return (existingTitle, incomingTitle) switch
+        {
+            (MovieEntry existingMovie, MovieEntry incomingMovie) => incomingMovie with
+            {
+                Identifiers = mergedIdentifiers,
+                Name = mergedName,
+                OriginalName = mergedOriginalName,
+                Overview = mergedOverview,
+                ReleaseDate = incomingMovie.ReleaseDate ?? existingMovie.ReleaseDate,
+                PosterPath = mergedPosterPath,
+                BackdropPath = mergedBackdropPath,
+                Genres = mergedGenres,
+                OriginalLanguage = mergedLanguage,
+                RuntimeMinutes = incomingMovie.RuntimeMinutes is > 0 ? incomingMovie.RuntimeMinutes : existingMovie.RuntimeMinutes,
+                PublicRating = incomingMovie.PublicRating ?? existingMovie.PublicRating,
+                AgeRating = mergedAgeRating,
+                Directors = mergedDirectors
+            },
+            (TvShowEntry existingShow, TvShowEntry incomingShow) => incomingShow with
+            {
+                Identifiers = mergedIdentifiers,
+                Name = mergedName,
+                OriginalName = mergedOriginalName,
+                Overview = mergedOverview,
+                ReleaseDate = incomingShow.ReleaseDate ?? existingShow.ReleaseDate,
+                PosterPath = mergedPosterPath,
+                BackdropPath = mergedBackdropPath,
+                Genres = mergedGenres,
+                OriginalLanguage = mergedLanguage,
+                SeasonCount = incomingShow.SeasonCount ?? existingShow.SeasonCount,
+                EpisodeCount = incomingShow.EpisodeCount ?? existingShow.EpisodeCount,
+                PublicRating = incomingShow.PublicRating ?? existingShow.PublicRating,
+                AgeRating = mergedAgeRating,
+                Directors = mergedDirectors
+            },
+            _ => incomingTitle
+        };
+    }
+
+    private static string PreferText(string incoming, string existing) =>
+        string.IsNullOrWhiteSpace(incoming)
+            ? NormalizeText(existing)
+            : NormalizeText(incoming);
+
+    private static string PreferAgeRating(string incoming, string existing)
+    {
+        var normalizedIncoming = NormalizeText(incoming);
+        var normalizedExisting = NormalizeText(existing);
+        if (string.IsNullOrWhiteSpace(normalizedIncoming))
+            return normalizedExisting;
+
+        return string.Equals(normalizedIncoming, CatalogTitle.UnknownAgeRating, StringComparison.OrdinalIgnoreCase) &&
+               !string.IsNullOrWhiteSpace(normalizedExisting) &&
+               !string.Equals(normalizedExisting, CatalogTitle.UnknownAgeRating, StringComparison.OrdinalIgnoreCase)
+            ? normalizedExisting
+            : normalizedIncoming;
+    }
+
+    private static IReadOnlyList<string> PreferList(IReadOnlyList<string> incoming, IReadOnlyList<string> existing)
+    {
+        var normalizedIncoming = NormalizeList(incoming);
+        return normalizedIncoming.Count > 0
+            ? normalizedIncoming
+            : NormalizeList(existing);
+    }
+
+    private static string NormalizeText(string value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static IReadOnlyList<string> NormalizeList(IReadOnlyList<string> values) =>
+        values?
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray()
+        ?? Array.Empty<string>();
 
     private static void AddTitleParameters(SqliteCommand command, CatalogTitle title)
     {

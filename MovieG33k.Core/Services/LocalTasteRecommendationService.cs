@@ -153,7 +153,9 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
             if (weight <= 0d)
                 continue;
 
-            foreach (var director in (title.Directors?.Count > 0 ? title.Directors : Array.Empty<string>()).Distinct(StringComparer.OrdinalIgnoreCase))
+            foreach (var director in (title.Directors?.Count > 0 ? title.Directors : Array.Empty<string>())
+                         .Where(director => !CatalogTitle.IsUnknownDirector(director))
+                         .Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 aggregates[director] = aggregates.TryGetValue(director, out var aggregate)
                     ? aggregate.Add(preference, weight)
@@ -202,6 +204,7 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
         var trimmedQuery = query.Trim();
         return title.Name?.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase) == true ||
                title.OriginalName?.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase) == true ||
+               title.Directors?.Any(director => !CatalogTitle.IsUnknownDirector(director) && director.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase)) == true ||
                title.Genres?.Any(genre => genre.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase)) == true;
     }
 
@@ -240,7 +243,7 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
         var snapshotsToEnrich = snapshots
             .Where(snapshot =>
                 (requireAgeRatings && snapshot.Title.Kind == TitleKind.Movie && string.IsNullOrWhiteSpace(snapshot.Title.AgeRating)) ||
-                (requireDirectors && (snapshot.Title.Directors == null || snapshot.Title.Directors.Count == 0)))
+                (requireDirectors && !snapshot.Title.HasResolvedDirectors))
             .Take(enrichmentLimit)
             .ToArray();
         if (snapshotsToEnrich.Length == 0)
@@ -348,7 +351,9 @@ public sealed class LocalTasteRecommendationService : IRecommendationService
                 signals.Add(genre);
         }
 
-        foreach (var director in snapshot.Title.Directors?.Distinct(StringComparer.OrdinalIgnoreCase) ?? Array.Empty<string>())
+        foreach (var director in (snapshot.Title.Directors ?? Array.Empty<string>())
+                     .Where(director => !CatalogTitle.IsUnknownDirector(director))
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (!directorAffinity.TryGetValue(director, out var directorScore))
                 continue;

@@ -245,6 +245,8 @@ public sealed class LibraryItemSnapshotViewModel : ViewModelBase
     private static string BuildPosterUrl(string posterPath) =>
         string.IsNullOrWhiteSpace(posterPath)
             ? null
+            : CatalogTitle.IsUnavailablePosterPath(posterPath)
+                ? null
             : Path.IsPathRooted(posterPath) && File.Exists(posterPath)
                 ? posterPath
             : Uri.TryCreate(posterPath, UriKind.Absolute, out var absoluteUri) && !absoluteUri.IsFile

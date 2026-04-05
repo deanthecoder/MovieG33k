@@ -45,18 +45,21 @@ public sealed class DiscoveryWorkspaceService
             throw new ArgumentNullException(nameof(query));
 
         Logger.Instance.Info(
-            $"Discovering {query.Kind} titles for query '{(string.IsNullOrWhiteSpace(query.Query) ? "<trending>" : query.Query)}' (max {query.MaxResults}).");
+            $"Discovering {query.Kind} titles for query '{(string.IsNullOrWhiteSpace(query.Query) ? "<trending>" : query.Query)}' " +
+            $"with director filter '{query.DirectorFilter ?? "<any>"}' (max {query.MaxResults}).");
         await m_libraryRepository.InitializeAsync(cancellationToken);
 
         var remoteTitles =
-            string.IsNullOrWhiteSpace(query.Query)
+            !string.IsNullOrWhiteSpace(query.DirectorFilter)
+                ? Array.Empty<CatalogTitle>()
+                : string.IsNullOrWhiteSpace(query.Query)
                 ? await m_tmdbMetadataClient.GetTrendingAsync(query.Kind, query.MaxResults, cancellationToken)
                 : await m_tmdbMetadataClient.SearchAsync(query, cancellationToken);
 
         if (remoteTitles.Count > 0)
             await m_libraryRepository.UpsertTitlesAsync(remoteTitles, cancellationToken);
 
-        var localMatches = await m_libraryRepository.SearchLibraryAsync(query.Query, query.Kind, query.MaxResults, cancellationToken);
+        var localMatches = await m_libraryRepository.SearchLibraryAsync(query.Query, query.Kind, query.MaxResults, query.DirectorFilter, cancellationToken);
         var remoteSnapshotsByKey =
             remoteTitles.Count == 0
                 ? new Dictionary<string, LibraryItemSnapshot>(StringComparer.OrdinalIgnoreCase)
@@ -285,16 +288,17 @@ public sealed class DiscoveryWorkspaceService
         Logger.Instance.Info($"Refreshing detailed metadata for '{title.Name}' ({title.Kind}).");
         var detailedTitle = await m_tmdbMetadataClient.GetTitleDetailsAsync(title.Identifiers, title.Kind, title.Name, cancellationToken) ?? title;
         await m_libraryRepository.UpsertTitlesAsync([detailedTitle], cancellationToken);
+        var normalizedSnapshot = await NormalizeUnavailableMetadataAsync(title, detailedTitle, cancellationToken);
 
-        var catalogKey = CatalogTitleKey.Create(detailedTitle.Kind, detailedTitle.Identifiers);
-        var snapshotsByKey = await m_libraryRepository.GetByCatalogKeysAsync([catalogKey], cancellationToken);
-        return snapshotsByKey.TryGetValue(catalogKey, out var snapshot)
-            ? snapshot
-            : new LibraryItemSnapshot(detailedTitle);
+        var result = normalizedSnapshot ?? await GetSnapshotAfterRefreshAsync(title, detailedTitle, cancellationToken) ?? new LibraryItemSnapshot(detailedTitle);
+        if (!IsMetadataComplete(result.Title))
+            Logger.Instance.Warn($"Detailed metadata for '{result.Title.Name}' is still incomplete after refresh.");
+
+        return result;
     }
 
     /// <summary>
-    /// Returns the current startup-sized batch of rated titles that still need richer metadata.
+    /// Returns the current startup-sized batch of cached titles that still need richer metadata.
     /// </summary>
     public async Task<int> GetPendingMetadataRefreshCountAsync(
         int maxResultsPerKind = 24,
@@ -305,8 +309,8 @@ public sealed class DiscoveryWorkspaceService
 
         await m_libraryRepository.InitializeAsync(cancellationToken);
 
-        var movieSnapshots = await m_libraryRepository.GetRatedTitlesMissingMetadataAsync(TitleKind.Movie, maxResultsPerKind, cancellationToken);
-        var tvSnapshots = await m_libraryRepository.GetRatedTitlesMissingMetadataAsync(TitleKind.TvShow, maxResultsPerKind, cancellationToken);
+        var movieSnapshots = await m_libraryRepository.GetTitlesMissingMetadataAsync(TitleKind.Movie, maxResultsPerKind, cancellationToken);
+        var tvSnapshots = await m_libraryRepository.GetTitlesMissingMetadataAsync(TitleKind.TvShow, maxResultsPerKind, cancellationToken);
         return movieSnapshots
             .Concat(tvSnapshots)
             .Select(snapshot => CatalogTitleKey.Create(snapshot.Title.Kind, snapshot.Title.Identifiers))
@@ -315,7 +319,7 @@ public sealed class DiscoveryWorkspaceService
     }
 
     /// <summary>
-    /// Background-refreshes recently rated titles that are still missing key metadata.
+    /// Background-refreshes cached titles that are still missing key metadata.
     /// </summary>
     public async Task<int> RefreshMissingMetadataForRatedTitlesAsync(
         int maxResultsPerKind = 24,
@@ -330,8 +334,8 @@ public sealed class DiscoveryWorkspaceService
 
         await m_libraryRepository.InitializeAsync(cancellationToken);
 
-        var movieSnapshots = await m_libraryRepository.GetRatedTitlesMissingMetadataAsync(TitleKind.Movie, maxResultsPerKind, cancellationToken);
-        var tvSnapshots = await m_libraryRepository.GetRatedTitlesMissingMetadataAsync(TitleKind.TvShow, maxResultsPerKind, cancellationToken);
+        var movieSnapshots = await m_libraryRepository.GetTitlesMissingMetadataAsync(TitleKind.Movie, maxResultsPerKind, cancellationToken);
+        var tvSnapshots = await m_libraryRepository.GetTitlesMissingMetadataAsync(TitleKind.TvShow, maxResultsPerKind, cancellationToken);
         var pendingSnapshots = movieSnapshots
             .Concat(tvSnapshots)
             .GroupBy(snapshot => CatalogTitleKey.Create(snapshot.Title.Kind, snapshot.Title.Identifiers), StringComparer.OrdinalIgnoreCase)
@@ -340,12 +344,12 @@ public sealed class DiscoveryWorkspaceService
 
         if (pendingSnapshots.Length == 0)
         {
-            Logger.Instance.Info("Background rated-title metadata refresh found nothing to update.");
+            Logger.Instance.Info("Background metadata refresh found nothing to update.");
             progress?.Report(new MetadataRefreshProgress(0, 0, 0, null));
             return 0;
         }
 
-        Logger.Instance.Info($"Starting background refresh for {pendingSnapshots.Length} rated titles with missing metadata.");
+        Logger.Instance.Info($"Starting background refresh for {pendingSnapshots.Length} cached titles with missing metadata.");
         progress?.Report(new MetadataRefreshProgress(0, pendingSnapshots.Length, 0, null));
 
         var semaphore = new SemaphoreSlim(BackgroundRefreshParallelism);
@@ -362,7 +366,17 @@ public sealed class DiscoveryWorkspaceService
                     return;
 
                 await m_libraryRepository.UpsertTitlesAsync([detailedTitle], cancellationToken);
-                Interlocked.Increment(ref refreshedCount);
+                var refreshedSnapshot =
+                    await NormalizeUnavailableMetadataAsync(snapshot.Title, detailedTitle, cancellationToken) ??
+                    await GetSnapshotAfterRefreshAsync(snapshot.Title, detailedTitle, cancellationToken);
+                if (refreshedSnapshot != null && IsMetadataComplete(refreshedSnapshot.Title))
+                {
+                    Interlocked.Increment(ref refreshedCount);
+                }
+                else
+                {
+                    Logger.Instance.Warn($"Metadata for '{snapshot.Title.Name}' is still incomplete after refresh.");
+                }
             }
             catch (OperationCanceledException)
             {
@@ -380,7 +394,7 @@ public sealed class DiscoveryWorkspaceService
             }
         }));
 
-        Logger.Instance.Info($"Background rated-title metadata refresh completed. Refreshed {refreshedCount} titles.");
+        Logger.Instance.Info($"Background metadata refresh completed. Refreshed {refreshedCount} titles.");
         return refreshedCount;
     }
 
@@ -488,9 +502,87 @@ public sealed class DiscoveryWorkspaceService
     private static int ToStarRating(int scoreOutOfTen) =>
         (int)Math.Round(scoreOutOfTen / 2d, MidpointRounding.AwayFromZero);
 
+    private async Task<LibraryItemSnapshot> GetSnapshotAfterRefreshAsync(
+        CatalogTitle originalTitle,
+        CatalogTitle refreshedTitle,
+        CancellationToken cancellationToken)
+    {
+        var candidateKeys = new[]
+        {
+            CatalogTitleKey.Create(refreshedTitle.Kind, refreshedTitle.Identifiers),
+            CatalogTitleKey.Create(originalTitle.Kind, originalTitle.Identifiers)
+        }
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+        var snapshotsByKey = await m_libraryRepository.GetByCatalogKeysAsync(candidateKeys, cancellationToken);
+        foreach (var key in candidateKeys)
+        {
+            if (snapshotsByKey.TryGetValue(key, out var snapshot))
+                return snapshot;
+        }
+
+        return null;
+    }
+
+    private async Task<LibraryItemSnapshot> NormalizeUnavailableMetadataAsync(
+        CatalogTitle originalTitle,
+        CatalogTitle refreshedTitle,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await GetSnapshotAfterRefreshAsync(originalTitle, refreshedTitle, cancellationToken);
+        if (snapshot == null || IsMetadataComplete(snapshot.Title))
+            return snapshot;
+
+        var normalizedTitle = FillUnavailableMetadataPlaceholders(snapshot.Title);
+        if (ReferenceEquals(normalizedTitle, snapshot.Title))
+            return snapshot;
+
+        await m_libraryRepository.UpsertTitlesAsync([normalizedTitle], cancellationToken);
+        return await GetSnapshotAfterRefreshAsync(originalTitle, normalizedTitle, cancellationToken)
+               ?? new LibraryItemSnapshot(normalizedTitle, snapshot.Rating, snapshot.WatchState, snapshot.WatchlistEntry, snapshot.ProviderAvailabilities, snapshot.SourceLabel);
+    }
+
+    private static CatalogTitle FillUnavailableMetadataPlaceholders(CatalogTitle title) =>
+        title switch
+        {
+            MovieEntry movie => movie with
+            {
+                PosterPath = title.HasResolvedPosterPath ? title.PosterPath : CatalogTitle.UnknownPosterPath,
+                AgeRating = string.IsNullOrWhiteSpace(movie.AgeRating) && RequiresReleasedMovieMetadata(title) ? CatalogTitle.UnknownAgeRating : movie.AgeRating,
+                Directors = movie.HasResolvedDirectors ? movie.Directors : [CatalogTitle.UnknownDirector],
+                RuntimeMinutes = movie.RuntimeMinutes
+            },
+            TvShowEntry tvShow => tvShow with
+            {
+                PosterPath = title.HasResolvedPosterPath ? title.PosterPath : CatalogTitle.UnknownPosterPath
+            },
+            _ => title
+        };
+
+    private static bool IsMetadataComplete(CatalogTitle title) =>
+        title != null &&
+        title.HasResolvedPosterPath &&
+        (title.Kind != TitleKind.Movie || !RequiresReleasedMovieMetadata(title) || !string.IsNullOrWhiteSpace(title.AgeRating)) &&
+        (title.Kind != TitleKind.Movie || title.HasResolvedDirectors);
+
+    private static bool RequiresReleasedMovieMetadata(CatalogTitle title) =>
+        title.Kind == TitleKind.Movie &&
+        (!title.ReleaseDate.HasValue || title.ReleaseDate.Value <= DateOnly.FromDateTime(DateTime.UtcNow));
+
     private string BuildStatusText(DiscoveryQuery query, int localMatchCount, int remoteCount)
     {
         var mediaType = query.Kind == TitleKind.Movie ? "movies" : "TV shows";
+
+        if (!string.IsNullOrWhiteSpace(query.DirectorFilter))
+        {
+            return localMatchCount == 0
+                ? string.IsNullOrWhiteSpace(query.Query)
+                    ? $"No {mediaType} directed by {query.DirectorFilter} are in your library yet."
+                    : $"No {mediaType} directed by {query.DirectorFilter} matched \"{query.Query}\"."
+                : string.IsNullOrWhiteSpace(query.Query)
+                    ? $"Showing {mediaType} in your library directed by {query.DirectorFilter}."
+                    : $"Showing {mediaType} directed by {query.DirectorFilter} matching \"{query.Query}\".";
+        }
 
         if (string.IsNullOrWhiteSpace(query.Query))
         {

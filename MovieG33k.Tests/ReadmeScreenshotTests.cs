@@ -332,8 +332,8 @@ public sealed class ReadmeScreenshotTests
 
         public Task UpsertProviderAvailabilityAsync(TitleIdentifiers identifiers, TitleKind kind, IReadOnlyList<ProviderAvailability> providerAvailabilities, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-        public Task<IReadOnlyList<LibraryItemSnapshot>> SearchLibraryAsync(string query, TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Filter(m_sampleData.Browse, query, kind, maxResults));
+        public Task<IReadOnlyList<LibraryItemSnapshot>> SearchLibraryAsync(string query, TitleKind kind, int maxResults, string directorFilter = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Filter(m_sampleData.Browse, query, kind, maxResults, directorFilter));
 
         public Task<IReadOnlyDictionary<string, LibraryItemSnapshot>> GetByCatalogKeysAsync(IReadOnlyList<string> catalogKeys, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyDictionary<string, LibraryItemSnapshot>>(
@@ -342,10 +342,10 @@ public sealed class ReadmeScreenshotTests
                     .ToDictionary(catalogKey => catalogKey, catalogKey => m_sampleData.ByCatalogKey[catalogKey], StringComparer.OrdinalIgnoreCase));
 
         public Task<IReadOnlyList<LibraryItemSnapshot>> GetWatchedAsync(string query, TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Filter(m_sampleData.Watched, query, kind, maxResults));
+            Task.FromResult(Filter(m_sampleData.Watched, query, kind, maxResults, null));
 
         public Task<IReadOnlyList<LibraryItemSnapshot>> GetWatchlistAsync(string query, TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Filter(m_sampleData.Watchlist, query, kind, maxResults));
+            Task.FromResult(Filter(m_sampleData.Watchlist, query, kind, maxResults, null));
 
         public Task<IReadOnlyList<RatedTitleInsight>> GetRatedTitleInsightsAsync(TitleKind kind, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<RatedTitleInsight>>(
@@ -366,11 +366,24 @@ public sealed class ReadmeScreenshotTests
                     .Take(maxResults)
                     .ToArray());
 
+        public Task<IReadOnlyList<LibraryItemSnapshot>> GetTitlesMissingMetadataAsync(TitleKind kind, int maxResults, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<LibraryItemSnapshot>>(
+                m_sampleData.ByCatalogKey.Values
+                    .Where(snapshot => snapshot.Title.Kind == kind)
+                    .Take(maxResults)
+                    .ToArray());
+
         public Task ResetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-        private static IReadOnlyList<LibraryItemSnapshot> Filter(IReadOnlyList<LibraryItemSnapshot> source, string query, TitleKind kind, int maxResults)
+        private static IReadOnlyList<LibraryItemSnapshot> Filter(IReadOnlyList<LibraryItemSnapshot> source, string query, TitleKind kind, int maxResults, string directorFilter)
         {
             IEnumerable<LibraryItemSnapshot> filtered = source.Where(snapshot => snapshot.Title.Kind == kind);
+
+            if (!string.IsNullOrWhiteSpace(directorFilter))
+            {
+                filtered = filtered.Where(snapshot =>
+                    snapshot.Title.Directors?.Any(director => director.Contains(directorFilter, StringComparison.OrdinalIgnoreCase)) == true);
+            }
 
             if (!string.IsNullOrWhiteSpace(query))
             {
