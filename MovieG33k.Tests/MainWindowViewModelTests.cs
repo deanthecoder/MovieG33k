@@ -288,6 +288,9 @@ public sealed class MainWindowViewModelTests
         Assert.That(viewModel.AverageRatingValue, Is.EqualTo("4.0/5"));
         Assert.That(viewModel.RatingDistribution.Any(item => item.Label == "5★" && item.ValueText == "1"), Is.True);
         Assert.That(viewModel.RatingByGenre.First().Label, Is.EqualTo("Science Fiction").Or.EqualTo("Action"));
+        Assert.That(viewModel.RatingByDecade.Single(item => item.Label == "1980s").Percent, Is.EqualTo(90d).Within(0.001d));
+        Assert.That(viewModel.RatingByDecade.Single(item => item.Label == "1990s").Percent, Is.EqualTo(60d).Within(0.001d));
+        Assert.That(viewModel.RatingByGenre.Single(item => item.Label == "Crime").Percent, Is.EqualTo(60d).Within(0.001d));
         Assert.That(viewModel.HasGenreShare, Is.True);
         Assert.That(viewModel.GenreShareSlices.Count, Is.GreaterThan(0));
         Assert.That(viewModel.MostWatchedGenres.Count, Is.GreaterThan(0));

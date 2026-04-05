@@ -735,13 +735,16 @@ public sealed class MainWindowViewModel : ViewModelBase
         CanLoadMore = false;
         m_enrichedDetailKeys.Clear();
 
+        var maxDistributionCount = insights.RatingDistribution.Count == 0 ? 0 : insights.RatingDistribution.Max(bucket => bucket.TitleCount);
+        var maxWatchedGenreCount = insights.RatingByGenre.Count == 0 ? 0 : insights.RatingByGenre.Max(bucket => bucket.TitleCount);
+
         ReplaceInsightBars(
             RatingDistribution,
             insights.RatingDistribution.Select(bucket => new InsightsBarViewModel(
                 $"{bucket.Stars}★",
                 bucket.TitleCount.ToString(),
                 bucket.TitleCount == 1 ? "1 title" : $"{bucket.TitleCount} titles",
-                bucket.TitleCount)));
+                CalculateRelativePercent(bucket.TitleCount, maxDistributionCount))));
 
         ReplaceInsightBars(
             RatingByDecade,
@@ -749,7 +752,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 $"{bucket.DecadeStartYear}s",
                 $"{bucket.AverageRatingOutOfFive:0.0}/5",
                 bucket.TitleCount == 1 ? "1 title" : $"{bucket.TitleCount} titles",
-                bucket.AverageRatingOutOfFive)));
+                CalculateOutOfFivePercent(bucket.AverageRatingOutOfFive))));
 
         ReplaceInsightBars(
             RatingByGenre,
@@ -757,7 +760,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 bucket.Genre,
                 $"{bucket.AverageRatingOutOfFive:0.0}/5",
                 bucket.TitleCount == 1 ? "1 title" : $"{bucket.TitleCount} titles",
-                bucket.AverageRatingOutOfFive)));
+                CalculateOutOfFivePercent(bucket.AverageRatingOutOfFive))));
 
         ReplaceInsightBars(
             MostWatchedGenres,
@@ -769,7 +772,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                     bucket.Genre,
                     bucket.TitleCount == 1 ? "1 title" : $"{bucket.TitleCount} titles",
                     $"{CalculateGenreShare(bucket.TitleCount, insights.RatingByGenre):0}% of genre tags",
-                    bucket.TitleCount)));
+                    CalculateRelativePercent(bucket.TitleCount, maxWatchedGenreCount))));
 
         ReplacePieSlices(GenreShareSlices, insights.RatingByGenre);
 
@@ -787,16 +790,26 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         target.Clear();
         var items = source?.ToArray() ?? Array.Empty<InsightsBarViewModel>();
-        var maxValue = items.Length == 0 ? 0 : items.Max(item => item.Percent);
 
         foreach (var item in items)
         {
             target.Add(item with
             {
-                Percent = maxValue <= 0 ? 0 : item.Percent / maxValue * 100d
+                Percent = Math.Clamp(item.Percent, 0d, 100d)
             });
         }
     }
+
+    private static double CalculateRelativePercent(double value, double maxValue)
+    {
+        if (maxValue <= 0d)
+            return 0d;
+
+        return value / maxValue * 100d;
+    }
+
+    private static double CalculateOutOfFivePercent(double ratingOutOfFive) =>
+        Math.Clamp(ratingOutOfFive, 0d, 5d) / 5d * 100d;
 
     private static void ReplacePieSlices(
         ObservableCollection<InsightsPieSliceViewModel> target,
